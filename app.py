@@ -39,12 +39,16 @@ if code_saisi:
             # --- AFFICHAGE DU PRODUIT PRINCIPAL ---
             col1, col2 = st.columns([1, 3])
             with col1:
-                # On récupère la nouvelle colonne Url_image_small
-                query_img = f"SELECT Url_image_small FROM `{TABLE_ID}` WHERE Code_barre = {code_saisi} LIMIT 1"
+                query_img = f"SELECT Url_image_small, Url FROM `{TABLE_ID}` WHERE Code_barre = {code_saisi} LIMIT 1"
                 res_img = client.query(query_img).to_dataframe()
                 
                 if not res_img.empty and res_img['Url_image_small'].iloc[0]:
-                    st.image(res_img['Url_image_small'].iloc[0], width=150)
+                    # On rend l'image principale cliquable vers le site
+                    st.markdown(f'''
+                        <a href="{res_img['Url'].iloc[0]}" target="_blank">
+                            <img src="{res_img['Url_image_small'].iloc[0]}" width="180" style="border-radius: 10px;">
+                        </a>
+                    ''', unsafe_allow_html=True)
                 else:
                     st.warning("📸 Image non disponible")
             
@@ -53,9 +57,8 @@ if code_saisi:
                 st.info(f"Famille : **{famille_trouvee}**")
 
             # --- TABLEAU DES ALTERNATIVES ---
-            # On ajoute Url_image_small dans la requête des alternatives
             query_alternatives = f"""
-                SELECT Url_image_small, Product_name, Marque, nutriscore_grade, Secret_Score, Nb_Additifs
+                SELECT Url_image_small, Product_name, Marque, nutriscore_grade, Secret_Score, Nb_Additifs, Url
                 FROM `{TABLE_ID}` 
                 WHERE Famille = "{famille_trouvee}" AND Code_barre != {code_saisi}
                 ORDER BY Secret_Score DESC, nutriscore_grade ASC LIMIT 10
@@ -63,17 +66,28 @@ if code_saisi:
             alternatives = client.query(query_alternatives).to_dataframe()
             
             st.write(f"### 🥗 Meilleures alternatives en '{famille_trouvee}' :")
+
+            # --- LA SOLUTION POUR LE LIEN SUR LE NOM ---
+            # On crée une nouvelle colonne "Produit" qui fusionne le nom et l'URL en format Markdown
+            # Note : On utilise st.column_config.LinkColumn plus bas pour l'interpréter
             
             st.dataframe(
                 alternatives,
                 column_config={
-                    "Url_image_small": st.column_config.ImageColumn("Visuel"), # Affiche la miniature
-                    "Product_name": "Produit", 
+                    "Url_image_small": st.column_config.ImageColumn("Visuel", width="medium"),
+                    "Url": st.column_config.LinkColumn(
+                        "Produit", 
+                        display_text=r"([^/]+)$", # Cette astuce va afficher le nom du produit extrait de l'URL
+                        help="Cliquez pour ouvrir la fiche"
+                    ),
+                    "Product_name": None, # On cache l'ancien nom car il est maintenant dans le lien
                     "Marque": "Marque",
                     "nutriscore_grade": "Nutriscore", 
                     "Secret_Score": "Score", 
                     "Nb_Additifs": "Additifs"
                 },
+                # On définit l'ordre des colonnes ici pour placer le Produit après le Visuel
+                column_order=("Url_image_small", "Url", "Marque", "nutriscore_grade", "Secret_Score", "Nb_Additifs"),
                 hide_index=True, 
                 use_container_width=True
             )
