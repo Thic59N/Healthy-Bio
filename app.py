@@ -1,22 +1,30 @@
 import streamlit as st
 from google.cloud import bigquery
 import json
+import os
 
 # 1. Connexion sécurisée
-if "gcp_service_account" in st.secrets:
-    # MODE CLOUD : On utilise les Secrets de Streamlit
-    credentials_dict = json.loads(st.secrets["gcp_service_account"])
-    client = bigquery.Client.from_service_account_info(credentials_dict)
-else:
-    # MODE LOCAL : On utilise ton fichier JSON habituel
-    import os
+client = None
+
+# On tente d'abord de lire les Secrets (Mode Cloud)
+try:
+    if "gcp_service_account" in st.secrets:
+        credentials_info = json.loads(st.secrets["gcp_service_account"])
+        client = bigquery.Client.from_service_account_info(credentials_info)
+except Exception:
+    # Si on est ici, c'est qu'on est en local ou que les secrets ne sont pas chargés
+    client = None
+
+# Si le client n'est toujours pas créé, on cherche le fichier JSON (Mode Local)
+if client is None:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     path_to_key = os.path.join(current_dir, "bases-sql-485411-c96fe54fc8c7.json")
+    
     if os.path.exists(path_to_key):
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = path_to_key
         client = bigquery.Client()
     else:
-        st.error("Clé JSON introuvable localement")
+        st.error("Désolé, impossible de trouver une clé de connexion (Secret ou JSON).")
         st.stop()
 
 # 2. Configuration de la page
