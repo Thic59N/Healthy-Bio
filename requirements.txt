@@ -2,3 +2,8 @@ streamlit
 google-cloud-bigquery
 pandas
 db-dtypes
+streamlit-camera-input-live
+opencv-python-headless
+numpy
+Pillow
+pip install pyzbar

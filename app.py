@@ -2,116 +2,178 @@ import streamlit as st
 from google.cloud import bigquery
 import json
 import os
+import requests
+from PIL import Image
+import io
 
-# 1. Connexion sécurisée
-client = None
+# --- 1. CONNEXION BIGQUERY (Local + Web) ---
+NOM_FICHIER_JSON = "bases-sql-485411-c96fe54fc8c7.json"
+current_dir = os.path.dirname(os.path.abspath(__file__))
+path_to_key = os.path.join(current_dir, NOM_FICHIER_JSON)
 
-# On tente d'abord de lire les Secrets (Mode Cloud)
-try:
-    if "gcp_service_account" in st.secrets:
-        credentials_info = json.loads(st.secrets["gcp_service_account"])
-        client = bigquery.Client.from_service_account_info(credentials_info)
-except Exception:
-    # Si on est ici, c'est qu'on est en local ou que les secrets ne sont pas chargés
-    client = None
-
-# Si le client n'est toujours pas créé, on cherche le fichier JSON (Mode Local)
-if client is None:
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    path_to_key = os.path.join(current_dir, "bases-sql-485411-c96fe54fc8c7.json")
-    
+def get_bigquery_client():
     if os.path.exists(path_to_key):
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = path_to_key
-        client = bigquery.Client()
-    else:
-        st.error("Désolé, impossible de trouver une clé de connexion (Secret ou JSON).")
-        st.stop()
+        return bigquery.Client.from_service_account_info(json.load(open(path_to_key)))
+    try:
+        if "gcp_service_account" in st.secrets:
+            info = json.loads(st.secrets["gcp_service_account"])
+            return bigquery.Client.from_service_account_info(info)
+    except: pass
+    return None
 
-# 2. Configuration de la page
-st.set_page_config(page_title="Healthy Bio v2 - Secret Sauce", layout="wide", page_icon="🥗")
+client = get_bigquery_client()
+
+if client is None:
+    st.error("❌ Connexion BigQuery impossible. Vérifie ton fichier JSON.")
+    st.stop()
+
+# --- 2. CONFIGURATION & STYLE ---
+st.set_page_config(page_title="NutriGuide", layout="wide")
+
+st.markdown("""
+    <style>
+    div[data-testid="stCameraInput"] { width: 420px !important; margin: auto; }
+    </style>
+    """, unsafe_allow_html=True)
 
 st.title("🍎 Assistant Healthy Bio - V2")
-st.subheader("Analyse des alternatives par Famille")
 
-# 3. Barre de saisie
-code_saisi = st.text_input("Entrez le code barre du produit :", placeholder="Ex: 8852018101147")
+if "code_detecte" not in st.session_state:
+    st.session_state.code_detecte = ""
 
-# Ta table BigQuery
-TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit"
-
-if code_saisi:
+# --- 3. FONCTIONS DE SCAN (QUADRUPLE SÉCURITÉ) ---
+def scan_zxing(img_bytes):
     try:
-        # REQUÊTE : On récupère les infos du produit saisi
-        query_prod = f"SELECT Product_name, Famille, Url, Url_image_small FROM `{TABLE_ID}` WHERE Code_barre = {code_saisi} LIMIT 1"
-        res_prod = client.query(query_prod).to_dataframe()
+        url_zxing = 'https://zxing.org/w/decode' 
+        files = {'f': img_bytes}
+        resp = requests.post(url_zxing, files=files, timeout=5)
+        if resp.status_code == 200 and "Raw text" in resp.text:
+            start = resp.text.find("<td><pre>") + 9
+            end = resp.text.find("</pre></td>", start)
+            return resp.text[start:end].strip()
+    except: return None
 
-        if not res_prod.empty:
-            nom_produit = res_prod['Product_name'].iloc[0]
-            famille_trouvee = res_prod['Famille'].iloc[0]
-            url_fiche = res_prod['Url'].iloc[0]
-            url_img = res_prod['Url_image_small'].iloc[0]
+def scan_off(img_bytes):
+    try:
+        files = {'barcode_image': ('image.jpg', img_bytes, 'image/jpeg')}
+        resp = requests.post('https://world.openfoodfacts.org/cgi/barcode.pl', files=files, timeout=5)
+        if resp.status_code == 200 and resp.text.strip().isdigit():
+            return resp.text.strip()
+    except: return None
 
-            # --- AFFICHAGE DU PRODUIT PRINCIPAL ---
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                if url_img:
-                    # Image cliquable vers le site
-                    st.markdown(f'''
-                        <a href="{url_fiche}" target="_blank">
-                            <img src="{url_img}" width="180" style="border-radius: 10px; border: 1px solid #ddd;">
-                        </a>
-                    ''', unsafe_allow_html=True)
-                else:
-                    st.warning("📸 Image non disponible")
+def scan_barcodelookup(img_bytes):
+    try:
+        files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}
+        resp = requests.post('https://www.barcodelookup.com/scripts/id.php', files=files, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('success'): return str(data['barcode']).strip()
+    except: return None
+
+def scan_inlite(img_bytes):
+    try:
+        url_inlite = 'https://online-barcode-reader.inliteresearch.com/api/decode'
+        files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}
+        params = {'types': 'EAN13,Code128'} 
+        resp = requests.post(url_inlite, files=files, data=params, timeout=7)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data and len(data) > 0:
+                return data[0].get('Text').strip()
+    except: return None
+
+# --- 4. INTERFACE SCANNER (CORRIGÉE POUR 4 SERVEURS) ---
+st.subheader("📷 Scanner un produit")
+activer_scan = st.toggle("Activer la caméra pour scanner", value=False)
+
+if activer_scan:
+    img_file = st.camera_input("Visez le code-barres")
+    if img_file:
+        # On affiche "Quadruple" pour être précis
+        with st.spinner("Analyse par les serveurs (Quadruple vérification)..."):
+            img = Image.open(img_file)
+            img.thumbnail((800, 800))
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG")
+            img_bytes = buffer.getvalue()
+
+            # Cascade de serveurs : on les teste tous un par un
+            code = scan_zxing(img_bytes)
             
-            with col2:
-                st.success(f"✅ Produit : **{nom_produit}**")
-                st.info(f"Famille : **{famille_trouvee}**")
-                st.write(f"[Voir la fiche complète sur Open Food Facts]({url_fiche})")
-
-            st.divider()
-
-            # --- RÉCUPÉRATION DE TOUTES LES ALTERNATIVES ---
-            query_all = f"""
-                SELECT Url_image_small, Product_name, Marque, nutriscore_grade, Secret_Score, Nb_Additifs, Url
-                FROM `{TABLE_ID}` 
-                WHERE Famille = "{famille_trouvee}" AND Code_barre != {code_saisi}
-            """
-            all_alternatives = client.query(query_all).to_dataframe()
-
-            if not all_alternatives.empty:
-                # Configuration commune des colonnes pour éviter la répétition
-                config_table = {
-                    "Url_image_small": st.column_config.ImageColumn("Visuel", width="medium"),
-                    "Url": st.column_config.LinkColumn("Produit", display_text=r"([^/]+)$"),
-                    "Product_name": None, # Masqué car inclus dans Url
-                    "Marque": "Marque",
-                    "nutriscore_grade": "Nutriscore",
-                    "Secret_Score": "Score",
-                    "Nb_Additifs": "Additifs"
-                }
-                ordre_colonnes = ("Url_image_small", "Url", "Marque", "nutriscore_grade", "Secret_Score", "Nb_Additifs")
-
-                # --- TABLEAU 1 : LES 5 MEILLEURS ---
-                st.write(f"### 🏆 Les 5 meilleures alternatives")
-                top_5 = all_alternatives.sort_values(by=['Secret_Score', 'nutriscore_grade'], ascending=[False, True]).head(5)
-                st.dataframe(top_5, column_config=config_table, column_order=ordre_colonnes, hide_index=True, use_container_width=True)
-
-                st.write("") # Espace
-
-                # --- TABLEAU 2 : LES 5 MOINS BONS ---
-                st.write(f"### ⚠️ Les 5 moins bons de la catégorie")
-                bottom_5 = all_alternatives.sort_values(by=['Secret_Score', 'nutriscore_grade'], ascending=[True, False]).head(5)
-                st.dataframe(bottom_5, column_config=config_table, column_order=ordre_colonnes, hide_index=True, use_container_width=True)
+            if not code:
+                st.info("Serveur 1 occupé... Tentative Serveur 2")
+                code = scan_off(img_bytes)
+                
+            if not code:
+                st.info("Serveur 2 occupé... Tentative Serveur 3")
+                code = scan_barcodelookup(img_bytes)
+                
+            if not code:
+                st.info("Serveur 3 occupé... Tentative finale (Serveur 4)")
+                code = scan_inlite(img_bytes) # C'est ici que l'appel manquait !
+            
+            if code:
+                st.session_state.code_detecte = code
+                st.success(f"✅ Code détecté : {code}")
             else:
-                st.write("Aucune alternative trouvée dans cette famille.")
+                st.error("❌ Aucun serveur n'a pu lire le code. Essayez de stabiliser l'image ou de changer l'éclairage.")
+else:
+    st.info("Activez l'interrupteur pour allumer la caméra.")
 
+# --- 5. RÉSULTATS BIGQUERY ---
+st.divider()
+final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
+
+if final_code:
+    try:
+        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit"
+        query_p = f"""
+            SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
+            FROM `{TABLE_ID}` 
+            WHERE CAST(Code_barre AS STRING) = '{final_code}' 
+            LIMIT 1
+        """
+        df_p = client.query(query_p).to_dataframe()
+
+        if not df_p.empty:
+            p = df_p.iloc[0]
+            c1, c2 = st.columns([1, 4])
+            with c1:
+                if p['Url_image_small']: st.image(p['Url_image_small'], width=150)
+            with c2:
+                st.markdown(f"## [{p['Product_name']}]({p['Url']})")
+                st.info(f"Famille : {p['Famille']}")
+
+            st.write(f"### 📊 Comparaison : {p['Famille']}")
+            query_alt = f"""
+                SELECT Url_image_small, Product_name, Secret_Score, Url 
+                FROM `{TABLE_ID}` 
+                WHERE Famille = "{p['Famille']}" 
+                ORDER BY Secret_Score DESC
+            """
+            df_alt = client.query(query_alt).to_dataframe()
+
+            if not df_alt.empty:
+                col_top, col_flop = st.columns(2)
+                config = {
+                    "Url_image_small": st.column_config.ImageColumn("Photo"),
+                    "Secret_Score": "Score",
+                    "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
+                }
+                with col_top:
+                    st.success("🏆 TOP 3")
+                    st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
+                with col_flop:
+                    st.error("📉 FLOP 3")
+                    st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.error(f"❌ Le code {code_saisi} est introuvable dans la base.")
-
+            st.warning("Produit non trouvé dans la base.")
     except Exception as e:
-        st.error(f"Erreur lors de la récupération des données : {e}")
+        st.error(f"Erreur BigQuery : {e}")
 
+if st.button("🔄 RÉINITIALISER"):
+    st.session_state.code_detecte = ""
+    st.rerun()
 # Mémos codes test : 
 # 3560071051181
 # 8852018101147
