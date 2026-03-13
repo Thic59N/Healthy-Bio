@@ -1,17 +1,23 @@
 import streamlit as st
 from google.cloud import bigquery
-import os
+import json
 
-# 1. Connexion sécurisée - On force le chemin vers le dossier actuel pour la clé JSON
-current_dir = os.path.dirname(os.path.abspath(__file__))
-path_to_key = os.path.join(current_dir, "bases-sql-485411-c96fe54fc8c7.json")
-
-if os.path.exists(path_to_key):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = path_to_key
-    client = bigquery.Client()
+# 1. Connexion sécurisée
+if "gcp_service_account" in st.secrets:
+    # MODE CLOUD : On utilise les Secrets de Streamlit
+    credentials_dict = json.loads(st.secrets["gcp_service_account"])
+    client = bigquery.Client.from_service_account_info(credentials_dict)
 else:
-    st.error(f"Clé JSON introuvable à l'adresse : {path_to_key}")
-    st.stop()
+    # MODE LOCAL : On utilise ton fichier JSON habituel
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    path_to_key = os.path.join(current_dir, "bases-sql-485411-c96fe54fc8c7.json")
+    if os.path.exists(path_to_key):
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = path_to_key
+        client = bigquery.Client()
+    else:
+        st.error("Clé JSON introuvable localement")
+        st.stop()
 
 # 2. Configuration de la page
 st.set_page_config(page_title="Healthy Bio v2 - Secret Sauce", layout="wide", page_icon="🥗")
