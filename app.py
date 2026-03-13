@@ -35,11 +35,27 @@ if code_saisi:
         if not res_prod.empty:
             nom_produit = res_prod['Product_name'].iloc[0]
             famille_trouvee = res_prod['Famille'].iloc[0]
-            st.success(f"✅ Produit : **{nom_produit}** | Famille : **{famille_trouvee}**")
+            
+            # --- AFFICHAGE DU PRODUIT PRINCIPAL ---
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                # On récupère la nouvelle colonne Url_image_small
+                query_img = f"SELECT Url_image_small FROM `{TABLE_ID}` WHERE Code_barre = {code_saisi} LIMIT 1"
+                res_img = client.query(query_img).to_dataframe()
+                
+                if not res_img.empty and res_img['Url_image_small'].iloc[0]:
+                    st.image(res_img['Url_image_small'].iloc[0], width=150)
+                else:
+                    st.warning("📸 Image non disponible")
+            
+            with col2:
+                st.success(f"✅ Produit : **{nom_produit}**")
+                st.info(f"Famille : **{famille_trouvee}**")
 
-            # REQUÊTE 2 : Alternatives
+            # --- TABLEAU DES ALTERNATIVES ---
+            # On ajoute Url_image_small dans la requête des alternatives
             query_alternatives = f"""
-                SELECT Url as image_url, Product_name, Marque, nutriscore_grade, Secret_Score, Nb_Additifs
+                SELECT Url_image_small, Product_name, Marque, nutriscore_grade, Secret_Score, Nb_Additifs
                 FROM `{TABLE_ID}` 
                 WHERE Famille = "{famille_trouvee}" AND Code_barre != {code_saisi}
                 ORDER BY Secret_Score DESC, nutriscore_grade ASC LIMIT 10
@@ -47,14 +63,19 @@ if code_saisi:
             alternatives = client.query(query_alternatives).to_dataframe()
             
             st.write(f"### 🥗 Meilleures alternatives en '{famille_trouvee}' :")
+            
             st.dataframe(
                 alternatives,
                 column_config={
-                    "image_url": st.column_config.ImageColumn("Visuel"),
-                    "Product_name": "Produit", "Marque": "Marque",
-                    "nutriscore_grade": "Nutriscore", "Secret_Score": "Score", "Nb_Additifs": "Additifs"
+                    "Url_image_small": st.column_config.ImageColumn("Visuel"), # Affiche la miniature
+                    "Product_name": "Produit", 
+                    "Marque": "Marque",
+                    "nutriscore_grade": "Nutriscore", 
+                    "Secret_Score": "Score", 
+                    "Nb_Additifs": "Additifs"
                 },
-                hide_index=True, use_container_width=True
+                hide_index=True, 
+                use_container_width=True
             )
         else:
             st.error(f"❌ Le code {code_saisi} est introuvable.")
@@ -64,4 +85,3 @@ if code_saisi:
 # Tes commentaires/pense-bête en dessous sont parfaits
 # 3560071051181
 # 8852018101147
-#Site ok
