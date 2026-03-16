@@ -1,10 +1,50 @@
 import streamlit as st
-from google.cloud import bigquery
 import json
 import os
 import requests
 from PIL import Image
 import io
+import subprocess
+import sys
+
+# --- 0. BLOC DE SÉCURITÉ ANTI-ERREUR ---
+try:
+    from google.cloud import bigquery
+except (ImportError, ModuleNotFoundError):
+    # Si le module manque, on l'installe
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-cloud-bigquery", "db-dtypes"])
+    from google.cloud import bigquery
+
+# --- 1. CONNEXION BIGQUERY (Local + Web) ---
+NOM_FICHIER_JSON = "bases-sql-485411-c96fe54fc8c7.json"
+current_dir = os.path.dirname(os.path.abspath(__file__))
+path_to_key = os.path.join(current_dir, NOM_FICHIER_JSON)
+
+def get_bigquery_client():
+    if os.path.exists(path_to_key):
+        return bigquery.Client.from_service_account_info(json.load(open(path_to_key)))
+    try:
+        if "gcp_service_account" in st.secrets:
+            info = json.loads(st.secrets["gcp_service_account"])
+            return bigquery.Client.from_service_account_info(info)
+    except: 
+        pass
+    return None
+
+client = get_bigquery_client()
+
+if client is None:
+    st.error("❌ Connexion BigQuery impossible. Vérifie ton fichier JSON.")
+    st.stop()
+    
+# --- LE RESTE DE TON CODE ---
+
+# Installation automatique si le module est absent
+try:
+    from google.cloud import bigquery
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-cloud-bigquery", "db-dtypes"])
+    from google.cloud import bigquery
 
 # --- 1. CONNEXION BIGQUERY (Local + Web) ---
 NOM_FICHIER_JSON = "bases-sql-485411-c96fe54fc8c7.json"
@@ -36,7 +76,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🍎 Assistant Healthy Bio - V2")
+st.title("🍎 Assistant NutriGuide - V2")
 
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
