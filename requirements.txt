@@ -6,4 +6,4 @@ streamlit-camera-input-live
 opencv-python-headless
 numpy
 Pillow
-pip install pyzbar
+pyzbar
