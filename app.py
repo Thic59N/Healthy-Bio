@@ -82,14 +82,13 @@ def scan_inlite(img_bytes):
                 return data[0].get('Text').strip()
     except: return None
 
-# --- 4. INTERFACE SCANNER (CORRIGÉE POUR 4 SERVEURS) ---
+# --- 4. INTERFACE SCANNER ---
 st.subheader("📷 Scanner un produit")
 activer_scan = st.toggle("Activer la caméra pour scanner", value=False)
 
 if activer_scan:
     img_file = st.camera_input("Visez le code-barres")
     if img_file:
-        # On affiche "Quadruple" pour être précis
         with st.spinner("Analyse par les serveurs (Quadruple vérification)..."):
             img = Image.open(img_file)
             img.thumbnail((800, 800))
@@ -97,7 +96,6 @@ if activer_scan:
             img.save(buffer, format="JPEG")
             img_bytes = buffer.getvalue()
 
-            # Cascade de serveurs : on les teste tous un par un
             code = scan_zxing(img_bytes)
             
             if not code:
@@ -110,7 +108,7 @@ if activer_scan:
                 
             if not code:
                 st.info("Serveur 3 occupé... Tentative finale (Serveur 4)")
-                code = scan_inlite(img_bytes) # C'est ici que l'appel manquait !
+                code = scan_inlite(img_bytes)
             
             if code:
                 st.session_state.code_detecte = code
@@ -120,13 +118,15 @@ if activer_scan:
 else:
     st.info("Activez l'interrupteur pour allumer la caméra.")
 
-# --- 5. RÉSULTATS BIGQUERY ---
+# --- 5. RÉSULTATS BIGQUERY (Mis à jour vers V2) ---
 st.divider()
 final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
 if final_code:
     try:
-        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit"
+        # MISE À JOUR ICI : Pointage vers la table _v2
+        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v2"
+        
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
             FROM `{TABLE_ID}` 
