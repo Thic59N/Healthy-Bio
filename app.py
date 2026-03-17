@@ -124,8 +124,8 @@ final_code = st.text_input("Code détecté (modifiable manuellement) :", value=s
 
 if final_code:
     try:
-        # MISE À JOUR ICI : Pointage vers la table _v2
-        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v2"
+        # MISE À JOUR ICI : Pointage vers la table _v4
+        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v4"
         
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
