@@ -95,34 +95,41 @@ st.subheader("📷 Scanner un produit")
 
 # Le composant HTML5-QRCode permet de scanner en flux continu
 # Le composant HTML5-QRCode avec un pont de communication renforcé
+# Scanner avec déclencheur de validation automatique
 scanner_js = """
 <script src="https://unpkg.com/html5-qrcode"></script>
 <div id="reader" style="width:100%;"></div>
 <script>
     function onScanSuccess(decodedText, decodedResult) {
-        // 1. Envoyer la valeur au widget Streamlit
+        // 1. On cherche le champ de texte de Streamlit
         const inputs = window.parent.document.querySelectorAll('input');
-        // On cherche le champ texte qui correspond à notre widget
+        let found = false;
+        
         for (let input of inputs) {
-            if (input.ariaLabel === "Code détecté :") {
+            if (input.ariaLabel && input.ariaLabel.includes("Code détecté")) {
+                // 2. On injecte la valeur
                 input.value = decodedText;
+                
+                // 3. On simule les événements pour que Streamlit enregistre la saisie
                 input.dispatchEvent(new Event('input', { bubbles: true }));
                 input.dispatchEvent(new Event('change', { bubbles: true }));
-                input.dispatchEvent(new Event('blur', { bubbles: true }));
+                
+                found = true;
+                break;
             }
         }
-        
-        // 2. Méthode de secours via postMessage
-        window.parent.postMessage({
-            type: 'streamlit:set_widget_value',
-            data: decodedText,
-            widgetId: 'js_code_input'
-        }, '*');
+
+        // 4. On arrête le scanner pour éviter de scanner 50 fois le même produit
+        html5QrcodeScanner.clear();
+
+        // 5. PETIT HACK : On clique sur le bouton "Réinitialiser" ou on force un clic 
+        // n'importe où pour valider la saisie si nécessaire, 
+        // mais le dispatchEvent('change') devrait suffire.
     }
 
     let html5QrcodeScanner = new Html5QrcodeScanner(
         "reader", 
-        { fps: 15, qrbox: {width: 280, height: 180}, aspectRatio: 1.0 }, 
+        { fps: 15, qrbox: {width: 250, height: 150} }, 
         false
     );
     html5QrcodeScanner.render(onScanSuccess);
