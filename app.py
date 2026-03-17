@@ -7,7 +7,7 @@ import io
 import subprocess
 import sys
 import streamlit.components.v1 as components
-from google.oauth2 import service_account  # Nécessaire pour les scopes Drive
+from google.oauth2 import service_account
 
 # --- 0. BLOC DE SÉCURITÉ ANTI-ERREUR ---
 try:
@@ -26,9 +26,7 @@ def get_bigquery_client():
         "https://www.googleapis.com/auth/bigquery",
         "https://www.googleapis.com/auth/drive.readonly"
     ]
-    
     try:
-        # Cas LOCAL
         if os.path.exists(path_to_key):
             creds = service_account.Credentials.from_service_account_info(
                 json.load(open(path_to_key)), 
@@ -36,7 +34,6 @@ def get_bigquery_client():
             )
             return bigquery.Client(credentials=creds, project=creds.project_id)
         
-        # Cas CLOUD (Streamlit Secrets)
         if "gcp_service_account" in st.secrets:
             info = json.loads(st.secrets["gcp_service_account"])
             creds = service_account.Credentials.from_service_account_info(
@@ -67,6 +64,7 @@ st.markdown("""
         width: 100%; height: 38px; background-color: #1a2336; color: white;
         border: 1px solid rgba(250, 250, 250, 0.2); border-radius: 4px;
         font-family: system-ui, sans-serif; font-size: 16px; cursor: pointer;
+        transition: background-color 0.2s;
     }
     #btn-scan-gauche:hover { background-color: #2b3a56; }
     </style>
@@ -91,7 +89,7 @@ components.html("""
     </script>
 """, height=0)
 
-st.title("🍎 Assistant NutriGuide - V4")
+st.title("🍎 Assistant NutriGuide - V5")
 
 # --- 3. FONCTIONS DE SCAN ---
 def scan_zxing(img_bytes):
@@ -161,11 +159,20 @@ final_code = st.text_input("Code détecté (modifiable manuellement) :", value=s
 if final_code:
     try:
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v5"
-        query_p = f"SELECT Product_name, Famille, Secret_Score, Url_image_small, Url FROM `{TABLE_ID}` WHERE CAST(Code_barre AS STRING) = '{final_code}' LIMIT 1"
+        
+        query_p = f"""
+            SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
+            FROM `{TABLE_ID}` 
+            WHERE CAST(Code_barre AS STRING) = '{final_code}'
+               OR SAFE_CAST(Code_barre AS INT64) = SAFE_CAST('{final_code}' AS INT64)
+            LIMIT 1
+        """
         df_p = client.query(query_p).to_dataframe()
 
         if not df_p.empty:
             p = df_p.iloc[0]
+            famille_clean = p['Famille'].replace("'", "''")
+            
             c_img, c_txt = st.columns([1, 4])
             with c_img:
                 if p['Url_image_small']: st.image(p['Url_image_small'], width=150)
@@ -174,12 +181,22 @@ if final_code:
                 st.info(f"Famille : {p['Famille']} | Score : {p['Secret_Score']}")
 
             st.write(f"### 📊 Comparaison dans la catégorie : {p['Famille']}")
-            query_alt = f"SELECT Url_image_small, Product_name, Secret_Score, Url FROM `{TABLE_ID}` WHERE Famille = \"{p['Famille']}\" ORDER BY Secret_Score DESC"
+            
+            query_alt = f"""
+                SELECT Url_image_small, Product_name, Secret_Score, Url 
+                FROM `{TABLE_ID}` 
+                WHERE Famille = '{famille_clean}' 
+                ORDER BY Secret_Score DESC
+            """
             df_alt = client.query(query_alt).to_dataframe()
 
             if not df_alt.empty:
                 col_top, col_flop = st.columns(2)
-                config = {"Url_image_small": st.column_config.ImageColumn("Photo"), "Secret_Score": "Score", "Url": st.column_config.LinkColumn("Lien", display_text="🌐")}
+                config = {
+                    "Url_image_small": st.column_config.ImageColumn("Photo"), 
+                    "Secret_Score": "Score", 
+                    "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
+                }
                 with col_top:
                     st.success("🏆 TOP 3")
                     st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
@@ -187,7 +204,7 @@ if final_code:
                     st.error("📉 FLOP 3")
                     st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning("Produit inconnu dans la base V4.")
+            st.warning(f"Produit {final_code} inconnu dans la base V5.")
     except Exception as e:
         st.error(f"Erreur lors de la recherche : {e}")
 
