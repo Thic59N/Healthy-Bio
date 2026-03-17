@@ -51,105 +51,53 @@ if client is None:
     st.error("❌ Connexion BigQuery impossible. Vérifie ton fichier JSON.")
     st.stop()
 
-# --- 2. CONFIGURATION & STYLE (OPTIMISÉ SMARTPHONE) ---
+# --- 2. CONFIGURATION & STYLE ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
-
-st.markdown("""
-    <style>
-    /* Optimisation pour petits écrans */
-    .main .block-container {
-        padding-top: 1rem;
-        padding-bottom: 1rem;
-        padding-left: 0.7rem;
-        padding-right: 0.7rem;
-    }
-    
-    /* Boutons larges pour usage tactile */
-    .stButton > button {
-        width: 100%;
-        height: 3.5rem;
-        border-radius: 12px;
-        font-weight: bold;
-    }
-
-    /* Style du conteneur de scan */
-    #reader {
-        border: 2px solid #1a2336 !important;
-        border-radius: 15px !important;
-        overflow: hidden;
-    }
-
-    /* Masquer les éléments inutiles sur mobile */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    </style>
-    """, unsafe_allow_html=True)
 
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
-st.title("🍎 NutriGuide - Mobile Scan")
+# Récupération automatique si le code est dans l'URL (après scan)
+if "code" in st.query_params:
+    st.session_state.code_detecte = st.query_params["code"]
 
-# --- 3. INTERFACE SCANNER AUTOMATIQUE (JS) ---
+st.markdown("""
+    <style>
+    .main .block-container { padding: 1rem 0.7rem; }
+    .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
+    #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; }
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🍎 Assistant NutriGuide - V6")
+
+# --- 3. INTERFACE SCANNER (MOBILE DIRECT) ---
 st.subheader("📷 Scanner un produit")
 
-# Le composant HTML5-QRCode permet de scanner en flux continu
-# Le composant HTML5-QRCode avec un pont de communication renforcé
-# Scanner avec déclencheur de validation automatique
 scanner_js = """
 <script src="https://unpkg.com/html5-qrcode"></script>
 <div id="reader" style="width:100%;"></div>
 <script>
     function onScanSuccess(decodedText, decodedResult) {
-        // 1. On cherche le champ de texte de Streamlit
-        const inputs = window.parent.document.querySelectorAll('input');
-        let found = false;
-        
-        for (let input of inputs) {
-            if (input.ariaLabel && input.ariaLabel.includes("Code détecté")) {
-                // 2. On injecte la valeur
-                input.value = decodedText;
-                
-                // 3. On simule les événements pour que Streamlit enregistre la saisie
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-                
-                found = true;
-                break;
-            }
-        }
-
-        // 4. On arrête le scanner pour éviter de scanner 50 fois le même produit
         html5QrcodeScanner.clear();
-
-        // 5. PETIT HACK : On clique sur le bouton "Réinitialiser" ou on force un clic 
-        // n'importe où pour valider la saisie si nécessaire, 
-        // mais le dispatchEvent('change') devrait suffire.
+        const url = new URL(window.location.href);
+        url.searchParams.set('code', decodedText);
+        window.parent.location.href = url.href;
     }
-
     let html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", 
-        { fps: 15, qrbox: {width: 250, height: 150} }, 
-        false
+        "reader", { fps: 15, qrbox: {width: 250, height: 150} }, false
     );
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 """
 
-activer_scan = st.toggle("Activer le scanner en direct", value=True)
+activer_scan = st.toggle("Activer le scanner", value=not st.session_state.code_detecte)
 
 if activer_scan:
-    # On affiche le scanner dans un composant HTML
-    components.html(scanner_js, height=380)
+    components.html(scanner_js, height=350)
 
-# Champ caché/récupérateur pour le JS (et modifiable manuellement)
-final_code = st.text_input(
-    "Code détecté :", 
-    value=st.session_state.code_detecte, 
-    key="js_code_input"
-).strip()
-
-st.divider()
+final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
 # --- 4. RECHERCHE BIGQUERY (VUE V6) ---
 if final_code:
@@ -169,14 +117,14 @@ if final_code:
             p = df_p.iloc[0]
             famille_clean = p['Famille'].replace("'", "''")
             
-            c_img, c_txt = st.columns([1, 2])
+            c_img, c_txt = st.columns([1, 4])
             with c_img:
-                if p['Url_image_small']: st.image(p['Url_image_small'], use_container_width=True)
+                if p['Url_image_small']: st.image(p['Url_image_small'], width=150)
             with c_txt:
-                st.markdown(f"### [{p['Product_name']}]({p['Url']})")
+                st.markdown(f"## [{p['Product_name']}]({p['Url']})")
                 st.info(f"Famille : {p['Famille']} | Score : {p['Secret_Score']}")
 
-            st.write(f"### 📊 Comparaison : {p['Famille']}")
+            st.write(f"### 📊 Comparaison dans la catégorie : {p['Famille']}")
             
             query_alt = f"""
                 SELECT Url_image_small, Product_name, Secret_Score, Url 
@@ -187,22 +135,24 @@ if final_code:
             df_alt = client.query(query_alt).to_dataframe()
 
             if not df_alt.empty:
-                # Sur mobile, on empile les sections pour la lisibilité
-                st.success("🏆 TOP 3 PRODUITS")
+                col_top, col_flop = st.columns(2)
                 config = {
                     "Url_image_small": st.column_config.ImageColumn("Photo"), 
                     "Secret_Score": "Score", 
                     "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
                 }
-                st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
-                
-                st.error("📉 FLOP 3 PRODUITS")
-                st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
+                with col_top:
+                    st.success("🏆 TOP 3")
+                    st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
+                with col_flop:
+                    st.error("📉 FLOP 3")
+                    st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Produit {final_code} inconnu.")
+            st.warning(f"Produit {final_code} inconnu dans la base.")
     except Exception as e:
         st.error(f"Erreur lors de la recherche : {e}")
 
-if st.button("🔄 RÉINITIALISER"):
+if st.button("🔄 RÉINITIALISER / NOUVEAU SCAN"):
+    st.query_params.clear()
     st.session_state.code_detecte = ""
     st.rerun()
