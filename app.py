@@ -22,33 +22,22 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 path_to_key = os.path.join(current_dir, NOM_FICHIER_JSON)
 
 def get_bigquery_client():
-    scopes = [
-        "https://www.googleapis.com/auth/bigquery",
-        "https://www.googleapis.com/auth/drive.readonly"
-    ]
+    scopes = ["https://www.googleapis.com/auth/bigquery", "https://www.googleapis.com/auth/drive.readonly"]
     try:
         if os.path.exists(path_to_key):
-            creds = service_account.Credentials.from_service_account_info(
-                json.load(open(path_to_key)), 
-                scopes=scopes
-            )
+            creds = service_account.Credentials.from_service_account_info(json.load(open(path_to_key)), scopes=scopes)
             return bigquery.Client(credentials=creds, project=creds.project_id)
-        
         if "gcp_service_account" in st.secrets:
             info = json.loads(st.secrets["gcp_service_account"])
-            creds = service_account.Credentials.from_service_account_info(
-                info, 
-                scopes=scopes
-            )
+            creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
             return bigquery.Client(credentials=creds, project=creds.project_id)
     except Exception as e:
         st.error(f"Erreur de connexion : {e}")
     return None
 
 client = get_bigquery_client()
-
 if client is None:
-    st.error("❌ Connexion BigQuery impossible. Vérifie ton fichier JSON.")
+    st.error("❌ Connexion BigQuery impossible.")
     st.stop()
 
 # --- 2. CONFIGURATION & STYLE ---
@@ -57,53 +46,55 @@ st.set_page_config(page_title="NutriGuide", layout="wide")
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
-# Récupération automatique si le code est dans l'URL (après scan)
-if "code" in st.query_params:
-    st.session_state.code_detecte = st.query_params["code"]
-
 st.markdown("""
     <style>
-    .main .block-container { padding: 1rem 0.7rem; }
     .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
-    #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; }
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+    #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🍎 Assistant NutriGuide - V6")
 
-# --- 3. INTERFACE SCANNER (MOBILE DIRECT) ---
+# --- 3. LE SCANNER (VERSION ROBUSTE MOBILE) ---
 st.subheader("📷 Scanner un produit")
 
-scanner_js = """
-<script src="https://unpkg.com/html5-qrcode"></script>
-<div id="reader" style="width:100%;"></div>
-<script>
-    function onScanSuccess(decodedText, decodedResult) {
-        html5QrcodeScanner.clear();
-        const url = new URL(window.location.href);
-        url.searchParams.set('code', decodedText);
-        window.parent.location.href = url.href;
-    }
-    let html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", { fps: 15, qrbox: {width: 250, height: 150} }, false
-    );
-    html5QrcodeScanner.render(onScanSuccess);
-</script>
-"""
+# Ce composant utilise une méthode de communication directe avec Streamlit
+def barcode_scanner():
+    scanner_html = """
+    <div id="reader" style="width:100%;"></div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        const html5QrCode = new Html5Qrcode("reader");
+        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+            // On envoie le résultat via un champ caché que Streamlit peut lire
+            const input = window.parent.document.querySelector('input[aria-label="Code détecté (modifiable manuellement) :"]');
+            if (input) {
+                input.value = decodedText;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new Event('blur', { bubbles: true }));
+            }
+            html5QrCode.stop();
+        };
+        const config = { fps: 15, qrbox: { width: 250, height: 150 } };
+        html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback);
+    </script>
+    """
+    components.html(scanner_html, height=350)
 
-activer_scan = st.toggle("Activer le scanner", value=not st.session_state.code_detecte)
+if st.toggle("Lancer le scan direct", value=False):
+    barcode_scanner()
 
-if activer_scan:
-    components.html(scanner_js, height=350)
-
+# Le champ texte reçoit la valeur du JS
 final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
-# --- 4. RECHERCHE BIGQUERY (VUE V6) ---
+# --- 4. RECHERCHE BIGQUERY (TA LOGIQUE ORIGINALE) ---
 if final_code:
+    # On mémorise pour éviter de perdre la valeur au prochain cycle
+    st.session_state.code_detecte = final_code
+    
     try:
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
-        
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
             FROM `{TABLE_ID}` 
@@ -148,11 +139,10 @@ if final_code:
                     st.error("📉 FLOP 3")
                     st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Produit {final_code} inconnu dans la base.")
+            st.warning(f"Produit {final_code} inconnu.")
     except Exception as e:
-        st.error(f"Erreur lors de la recherche : {e}")
+        st.error(f"Erreur : {e}")
 
-if st.button("🔄 RÉINITIALISER / NOUVEAU SCAN"):
-    st.query_params.clear()
+if st.button("🔄 RÉINITIALISER"):
     st.session_state.code_detecte = ""
     st.rerun()
