@@ -47,63 +47,65 @@ st.markdown("""
     <style>
     .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
     #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; }
-    .stTextInput > div > div > input { font-size: 20px !important; font-weight: bold; color: #FF4B4B; }
+    /* Style du bouton d'analyse quand il apparaît */
+    div[data-testid="stFormSubmitButton"] > button { background-color: #28a745 !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🍎 Assistant NutriGuide - V6")
 
-# --- 3. SCANNER AVEC TRANSFERT FORCE ---
+# --- 3. SCANNER AVEC DÉCLENCHEUR FORCÉ ---
 st.subheader("📷 Scanner un produit")
 
-scanner_html = """
-<div id="reader" style="width:100%;"></div>
-<script src="https://unpkg.com/html5-qrcode"></script>
-<script>
-    function onScanSuccess(decodedText, decodedResult) {
-        // 1. Chercher le champ de texte dans la page parente
-        const inputs = window.parent.document.querySelectorAll('input');
-        for (let input of inputs) {
-            if (input.ariaLabel && input.ariaLabel.includes("Code détecté")) {
-                input.value = decodedText;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-                input.dispatchEvent(new Event('blur', { bubbles: true }));
-                
-                // 2. Faire vibrer le téléphone pour confirmer le scan
-                if (navigator.vibrate) navigator.vibrate(200);
-                
-                // 3. Arrêter le scanner
-                html5QrcodeScanner.clear();
-                break;
+# On utilise un formulaire Streamlit pour capturer la validation
+with st.form("scan_form"):
+    scanner_html = """
+    <div id="reader" style="width:100%;"></div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        function onScanSuccess(decodedText, decodedResult) {
+            // 1. On remplit le champ de la page parente
+            const inputs = window.parent.document.querySelectorAll('input');
+            for (let input of inputs) {
+                if (input.ariaLabel && input.ariaLabel.includes("Code détecté")) {
+                    input.value = decodedText;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    // 2. On cherche le bouton "ANALYSER" du formulaire et on clique dessus
+                    const buttons = window.parent.document.querySelectorAll('button');
+                    for (let btn of buttons) {
+                        if (btn.innerText.includes("ANALYSER")) {
+                            btn.click();
+                            break;
+                        }
+                    }
+                    html5QrcodeScanner.clear();
+                    break;
+                }
             }
         }
-    }
-    let html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", { fps: 20, qrbox: {width: 250, height: 150}, aspectRatio: 1.0 }, false
-    );
-    html5QrcodeScanner.render(onScanSuccess);
-</script>
-"""
-
-if st.toggle("Activer la caméra", value=not st.session_state.code_detecte):
-    components.html(scanner_html, height=400)
-
-# Champ texte qui reçoit la valeur
-final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
-
-# --- BOUTON DE VALIDATION (Obligatoire si le scan ne déclenche pas le rerun) ---
-if final_code:
-    if st.button("🔍 ANALYSER CE PRODUIT", type="primary"):
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
+        );
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+    """
+    
+    components.html(scanner_html, height=380)
+    
+    final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
+    submit = st.form_submit_button("🔍 ANALYSER LE PRODUIT")
+    
+    if submit:
         st.session_state.code_detecte = final_code
-else:
-    st.info("Visez un code-barres avec la caméra ou saisissez-le manuellement.")
 
 st.divider()
 
 # --- 4. RECHERCHE BIGQUERY (TA LOGIQUE ORIGINALE) ---
-if final_code and client:
+if st.session_state.code_detecte and client:
     try:
+        final_code = st.session_state.code_detecte
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
@@ -153,6 +155,6 @@ if final_code and client:
     except Exception as e:
         st.error(f"Erreur : {e}")
 
-if st.button("🔄 RÉINITIALISER"):
+if st.button("🔄 NOUVEAU SCAN"):
     st.session_state.code_detecte = ""
     st.rerun()
