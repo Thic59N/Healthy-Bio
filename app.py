@@ -157,10 +157,10 @@ if activer_scan:
 st.divider()
 final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
-# --- 5. RECHERCHE BIGQUERY (VUE V3) ---
+# --- 5. RECHERCHE BIGQUERY (VUE V5) ---
 if final_code:
     try:
-        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v3"
+        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v5"
         query_p = f"SELECT Product_name, Famille, Secret_Score, Url_image_small, Url FROM `{TABLE_ID}` WHERE CAST(Code_barre AS STRING) = '{final_code}' LIMIT 1"
         df_p = client.query(query_p).to_dataframe()
 
