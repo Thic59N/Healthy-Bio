@@ -89,7 +89,7 @@ components.html("""
     </script>
 """, height=0)
 
-st.title("🍎 Assistant NutriGuide - V5")
+st.title("🍎 Assistant NutriGuide - V6")
 
 # --- 3. FONCTIONS DE SCAN ---
 def scan_zxing(img_bytes):
@@ -155,10 +155,10 @@ if activer_scan:
 st.divider()
 final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
-# --- 5. RECHERCHE BIGQUERY (VUE V5) ---
+# --- 5. RECHERCHE BIGQUERY (VUE V6) ---
 if final_code:
     try:
-        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v5"
+        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
         
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
