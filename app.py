@@ -9,7 +9,7 @@ import sys
 import streamlit.components.v1 as components
 from google.oauth2 import service_account
 
-# --- 0. BLOC DE SÉCURITÉ ---
+# --- 0. SÉCURITÉ BIGQUERY ---
 try:
     from google.cloud import bigquery
 except (ImportError, ModuleNotFoundError):
@@ -32,63 +32,77 @@ def get_bigquery_client():
             creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
             return bigquery.Client(credentials=creds, project=creds.project_id)
     except Exception as e:
-        st.error(f"Erreur de connexion : {e}")
+        st.error(f"Erreur connexion : {e}")
     return None
 
 client = get_bigquery_client()
-if client is None:
-    st.error("❌ Connexion BigQuery impossible.")
-    st.stop()
 
-# --- 2. CONFIGURATION & STYLE ---
+# --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
+
+if "code_detecte" not in st.session_state:
+    st.session_state.code_detecte = ""
 
 st.markdown("""
     <style>
     .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
     #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; }
+    .stTextInput > div > div > input { font-size: 20px !important; font-weight: bold; color: #FF4B4B; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🍎 Assistant NutriGuide - V6")
 
-# --- 3. LE SCANNER (COMMUNICATION DIRECTE) ---
+# --- 3. SCANNER AVEC TRANSFERT FORCE ---
 st.subheader("📷 Scanner un produit")
 
-# Ce script envoie la donnée directement à Streamlit via l'API de composant
-def st_barcode_scanner():
-    # On utilise un petit bout de code JS qui définit une valeur de retour
-    code_scanne = components.html(
-        """
-        <div id="reader" style="width:100%;"></div>
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <script>
-            function onScanSuccess(decodedText, decodedResult) {
-                // Envoyer le code au parent Streamlit
-                window.parent.postMessage({
-                    type: 'streamlit:set_widget_value',
-                    data: decodedText,
-                    widgetId: 'code_input_widget'
-                }, '*');
+scanner_html = """
+<div id="reader" style="width:100%;"></div>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+    function onScanSuccess(decodedText, decodedResult) {
+        // 1. Chercher le champ de texte dans la page parente
+        const inputs = window.parent.document.querySelectorAll('input');
+        for (let input of inputs) {
+            if (input.ariaLabel && input.ariaLabel.includes("Code détecté")) {
+                input.value = decodedText;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new Event('blur', { bubbles: true }));
+                
+                // 2. Faire vibrer le téléphone pour confirmer le scan
+                if (navigator.vibrate) navigator.vibrate(200);
+                
+                // 3. Arrêter le scanner
                 html5QrcodeScanner.clear();
+                break;
             }
-            let html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader", { fps: 15, qrbox: {width: 250, height: 150} }, false);
-            html5QrcodeScanner.render(onScanSuccess);
-        </script>
-        """,
-        height=350,
-    )
-    return code_scanne
+        }
+    }
+    let html5QrcodeScanner = new Html5QrcodeScanner(
+        "reader", { fps: 20, qrbox: {width: 250, height: 150}, aspectRatio: 1.0 }, false
+    );
+    html5QrcodeScanner.render(onScanSuccess);
+</script>
+"""
 
-if st.toggle("Lancer le scanner", value=False):
-    st_barcode_scanner()
+if st.toggle("Activer la caméra", value=not st.session_state.code_detecte):
+    components.html(scanner_html, height=400)
 
-# Utilisation d'une clé unique 'code_input_widget' pour le lien JS/Python
-final_code = st.text_input("Code détecté (modifiable manuellement) :", key="code_input_widget").strip()
+# Champ texte qui reçoit la valeur
+final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
-# --- 4. RECHERCHE BIGQUERY ---
+# --- BOUTON DE VALIDATION (Obligatoire si le scan ne déclenche pas le rerun) ---
 if final_code:
+    if st.button("🔍 ANALYSER CE PRODUIT", type="primary"):
+        st.session_state.code_detecte = final_code
+else:
+    st.info("Visez un code-barres avec la caméra ou saisissez-le manuellement.")
+
+st.divider()
+
+# --- 4. RECHERCHE BIGQUERY (TA LOGIQUE ORIGINALE) ---
+if final_code and client:
     try:
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
         query_p = f"""
@@ -104,7 +118,6 @@ if final_code:
             p = df_p.iloc[0]
             famille_clean = p['Famille'].replace("'", "''")
             
-            # --- AFFICHAGE RESULTAT ---
             c_img, c_txt = st.columns([1, 4])
             with c_img:
                 if p['Url_image_small']: st.image(p['Url_image_small'], width=150)
@@ -138,7 +151,8 @@ if final_code:
         else:
             st.warning(f"Produit {final_code} inconnu.")
     except Exception as e:
-        st.error(f"Erreur de recherche : {e}")
+        st.error(f"Erreur : {e}")
 
 if st.button("🔄 RÉINITIALISER"):
+    st.session_state.code_detecte = ""
     st.rerun()
