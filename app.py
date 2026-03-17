@@ -7,12 +7,13 @@ import io
 import subprocess
 import sys
 import streamlit.components.v1 as components
+from google.oauth2 import service_account  # Nécessaire pour les scopes Drive
 
 # --- 0. BLOC DE SÉCURITÉ ANTI-ERREUR ---
 try:
     from google.cloud import bigquery
 except (ImportError, ModuleNotFoundError):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-cloud-bigquery", "db-dtypes"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-cloud-bigquery", "db-dtypes", "google-auth"])
     from google.cloud import bigquery
 
 # --- 1. CONNEXION BIGQUERY (Local + Web) ---
@@ -21,14 +22,30 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 path_to_key = os.path.join(current_dir, NOM_FICHIER_JSON)
 
 def get_bigquery_client():
-    if os.path.exists(path_to_key):
-        return bigquery.Client.from_service_account_info(json.load(open(path_to_key)))
+    scopes = [
+        "https://www.googleapis.com/auth/bigquery",
+        "https://www.googleapis.com/auth/drive.readonly"
+    ]
+    
     try:
+        # Cas LOCAL
+        if os.path.exists(path_to_key):
+            creds = service_account.Credentials.from_service_account_info(
+                json.load(open(path_to_key)), 
+                scopes=scopes
+            )
+            return bigquery.Client(credentials=creds, project=creds.project_id)
+        
+        # Cas CLOUD (Streamlit Secrets)
         if "gcp_service_account" in st.secrets:
             info = json.loads(st.secrets["gcp_service_account"])
-            return bigquery.Client.from_service_account_info(info)
-    except: 
-        pass
+            creds = service_account.Credentials.from_service_account_info(
+                info, 
+                scopes=scopes
+            )
+            return bigquery.Client(credentials=creds, project=creds.project_id)
+    except Exception as e:
+        st.error(f"Erreur de connexion : {e}")
     return None
 
 client = get_bigquery_client()
@@ -45,32 +62,16 @@ if "code_detecte" not in st.session_state:
 
 st.markdown("""
     <style>
-    /* Taille caméra réduite selon ton souhait */
-    div[data-testid="stCameraInput"] { 
-        width: 350px !important; 
-        margin: auto; 
-    }
-    
-    /* Bouton de gauche identique à l'original */
+    div[data-testid="stCameraInput"] { width: 350px !important; margin: auto; }
     #btn-scan-gauche {
-        width: 100%;
-        height: 38px;
-        background-color: #1a2336;
-        color: white;
-        border: 1px solid rgba(250, 250, 250, 0.2);
-        border-radius: 4px;
-        font-family: system-ui, -apple-system, sans-serif;
-        font-size: 16px;
-        cursor: pointer;
-        transition: background-color 0.2s;
+        width: 100%; height: 38px; background-color: #1a2336; color: white;
+        border: 1px solid rgba(250, 250, 250, 0.2); border-radius: 4px;
+        font-family: system-ui, sans-serif; font-size: 16px; cursor: pointer;
     }
-    #btn-scan-gauche:hover {
-        background-color: #2b3a56;
-    }
+    #btn-scan-gauche:hover { background-color: #2b3a56; }
     </style>
     """, unsafe_allow_html=True)
 
-# Pont JavaScript pour lier les deux boutons
 components.html("""
     <script>
     function setupBridge() {
@@ -95,9 +96,7 @@ st.title("🍎 Assistant NutriGuide - V4")
 # --- 3. FONCTIONS DE SCAN ---
 def scan_zxing(img_bytes):
     try:
-        url_zxing = 'https://zxing.org/w/decode' 
-        files = {'f': img_bytes}
-        resp = requests.post(url_zxing, files=files, timeout=5)
+        resp = requests.post('https://zxing.org/w/decode', files={'f': img_bytes}, timeout=5)
         if resp.status_code == 200 and "Raw text" in resp.text:
             start = resp.text.find("<td><pre>") + 9
             end = resp.text.find("</pre></td>", start)
@@ -108,8 +107,7 @@ def scan_off(img_bytes):
     try:
         files = {'barcode_image': ('image.jpg', img_bytes, 'image/jpeg')}
         resp = requests.post('https://world.openfoodfacts.org/cgi/barcode.pl', files=files, timeout=5)
-        if resp.status_code == 200 and resp.text.strip().isdigit():
-            return resp.text.strip()
+        if resp.status_code == 200 and resp.text.strip().isdigit(): return resp.text.strip()
     except: return None
 
 def scan_barcodelookup(img_bytes):
@@ -123,14 +121,11 @@ def scan_barcodelookup(img_bytes):
 
 def scan_inlite(img_bytes):
     try:
-        url_inlite = 'https://online-barcode-reader.inliteresearch.com/api/decode'
         files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}
-        params = {'types': 'EAN13,Code128'} 
-        resp = requests.post(url_inlite, files=files, data=params, timeout=7)
+        resp = requests.post('https://online-barcode-reader.inliteresearch.com/api/decode', files=files, data={'types': 'EAN13,Code128'}, timeout=7)
         if resp.status_code == 200:
             data = resp.json()
-            if data and len(data) > 0:
-                return data[0].get('Text').strip()
+            if data: return data[0].get('Text').strip()
     except: return None
 
 # --- 4. INTERFACE SCANNER ---
@@ -152,9 +147,7 @@ if activer_scan:
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG")
             img_bytes = buffer.getvalue()
-            
             code = scan_zxing(img_bytes) or scan_off(img_bytes) or scan_barcodelookup(img_bytes) or scan_inlite(img_bytes)
-            
             if code:
                 st.session_state.code_detecte = code
                 st.success(f"✅ Code détecté : {code}")
@@ -162,21 +155,13 @@ if activer_scan:
                 st.error("❌ Impossible de lire le code.")
 
 st.divider()
-
 final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
-# --- 5. RECHERCHE BIGQUERY (VUE V4) ---
+# --- 5. RECHERCHE BIGQUERY (VUE V3) ---
 if final_code:
     try:
-        # Pointage vers la vue V4
-        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v4"
-        
-        query_p = f"""
-            SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
-            FROM `{TABLE_ID}` 
-            WHERE CAST(Code_barre AS STRING) = '{final_code}' 
-            LIMIT 1
-        """
+        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v3"
+        query_p = f"SELECT Product_name, Famille, Secret_Score, Url_image_small, Url FROM `{TABLE_ID}` WHERE CAST(Code_barre AS STRING) = '{final_code}' LIMIT 1"
         df_p = client.query(query_p).to_dataframe()
 
         if not df_p.empty:
@@ -189,22 +174,12 @@ if final_code:
                 st.info(f"Famille : {p['Famille']} | Score : {p['Secret_Score']}")
 
             st.write(f"### 📊 Comparaison dans la catégorie : {p['Famille']}")
-            
-            query_alt = f"""
-                SELECT Url_image_small, Product_name, Secret_Score, Url 
-                FROM `{TABLE_ID}` 
-                WHERE Famille = "{p['Famille']}" 
-                ORDER BY Secret_Score DESC
-            """
+            query_alt = f"SELECT Url_image_small, Product_name, Secret_Score, Url FROM `{TABLE_ID}` WHERE Famille = \"{p['Famille']}\" ORDER BY Secret_Score DESC"
             df_alt = client.query(query_alt).to_dataframe()
 
             if not df_alt.empty:
                 col_top, col_flop = st.columns(2)
-                config = {
-                    "Url_image_small": st.column_config.ImageColumn("Photo"),
-                    "Secret_Score": "Score",
-                    "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
-                }
+                config = {"Url_image_small": st.column_config.ImageColumn("Photo"), "Secret_Score": "Score", "Url": st.column_config.LinkColumn("Lien", display_text="🌐")}
                 with col_top:
                     st.success("🏆 TOP 3")
                     st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
