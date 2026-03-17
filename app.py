@@ -51,111 +51,88 @@ if client is None:
     st.error("❌ Connexion BigQuery impossible. Vérifie ton fichier JSON.")
     st.stop()
 
-# --- 2. CONFIGURATION & STYLE ---
+# --- 2. CONFIGURATION & STYLE (OPTIMISÉ SMARTPHONE) ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
+
+st.markdown("""
+    <style>
+    /* Optimisation pour petits écrans */
+    .main .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        padding-left: 0.7rem;
+        padding-right: 0.7rem;
+    }
+    
+    /* Boutons larges pour usage tactile */
+    .stButton > button {
+        width: 100%;
+        height: 3.5rem;
+        border-radius: 12px;
+        font-weight: bold;
+    }
+
+    /* Style du conteneur de scan */
+    #reader {
+        border: 2px solid #1a2336 !important;
+        border-radius: 15px !important;
+        overflow: hidden;
+    }
+
+    /* Masquer les éléments inutiles sur mobile */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
 
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
-st.markdown("""
-    <style>
-    div[data-testid="stCameraInput"] { width: 350px !important; margin: auto; }
-    #btn-scan-gauche {
-        width: 100%; height: 38px; background-color: #1a2336; color: white;
-        border: 1px solid rgba(250, 250, 250, 0.2); border-radius: 4px;
-        font-family: system-ui, sans-serif; font-size: 16px; cursor: pointer;
-        transition: background-color 0.2s;
-    }
-    #btn-scan-gauche:hover { background-color: #2b3a56; }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("🍎 NutriGuide - Mobile Scan")
 
-components.html("""
-    <script>
-    function setupBridge() {
-        const windowParent = window.parent.document;
-        const customBtn = windowParent.querySelector('#btn-scan-gauche');
-        if (customBtn) {
-            customBtn.onclick = function() {
-                const allButtons = windowParent.querySelectorAll('button');
-                const originalBtn = Array.from(allButtons).find(b => 
-                    b.innerText.includes("Take Photo") && b.id !== "btn-scan-gauche"
-                );
-                if (originalBtn) originalBtn.click();
-            };
-        }
-    }
-    setInterval(setupBridge, 500);
-    </script>
-""", height=0)
-
-st.title("🍎 Assistant NutriGuide - V6")
-
-# --- 3. FONCTIONS DE SCAN ---
-def scan_zxing(img_bytes):
-    try:
-        resp = requests.post('https://zxing.org/w/decode', files={'f': img_bytes}, timeout=5)
-        if resp.status_code == 200 and "Raw text" in resp.text:
-            start = resp.text.find("<td><pre>") + 9
-            end = resp.text.find("</pre></td>", start)
-            return resp.text[start:end].strip()
-    except: return None
-
-def scan_off(img_bytes):
-    try:
-        files = {'barcode_image': ('image.jpg', img_bytes, 'image/jpeg')}
-        resp = requests.post('https://world.openfoodfacts.org/cgi/barcode.pl', files=files, timeout=5)
-        if resp.status_code == 200 and resp.text.strip().isdigit(): return resp.text.strip()
-    except: return None
-
-def scan_barcodelookup(img_bytes):
-    try:
-        files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}
-        resp = requests.post('https://www.barcodelookup.com/scripts/id.php', files=files, timeout=5)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get('success'): return str(data['barcode']).strip()
-    except: return None
-
-def scan_inlite(img_bytes):
-    try:
-        files = {'file': ('image.jpg', img_bytes, 'image/jpeg')}
-        resp = requests.post('https://online-barcode-reader.inliteresearch.com/api/decode', files=files, data={'types': 'EAN13,Code128'}, timeout=7)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data: return data[0].get('Text').strip()
-    except: return None
-
-# --- 4. INTERFACE SCANNER ---
+# --- 3. INTERFACE SCANNER AUTOMATIQUE (JS) ---
 st.subheader("📷 Scanner un produit")
-activer_scan = st.toggle("Activer la caméra pour scanner", value=False)
+
+# Le composant HTML5-QRCode permet de scanner en flux continu
+scanner_js = """
+<script src="https://unpkg.com/html5-qrcode"></script>
+<div id="reader" style="width:100%;"></div>
+<script>
+    function onScanSuccess(decodedText, decodedResult) {
+        // Envoie le résultat à Streamlit via l'API interne
+        const result = decodedText;
+        window.parent.postMessage({
+            type: 'streamlit:set_widget_value',
+            data: result,
+            widgetId: 'js_code_input'
+        }, '*');
+    }
+
+    let html5QrcodeScanner = new Html5QrcodeScanner(
+        "reader", 
+        { fps: 10, qrbox: {width: 280, height: 180}, aspectRatio: 1.0 }, 
+        /* verbose= */ false
+    );
+    html5QrcodeScanner.render(onScanSuccess);
+</script>
+"""
+
+activer_scan = st.toggle("Activer le scanner en direct", value=True)
 
 if activer_scan:
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.write("<br>" * 8, unsafe_allow_html=True)
-        st.markdown('<button id="btn-scan-gauche">Take Photo</button>', unsafe_allow_html=True)
-    with col2:
-        img_file = st.camera_input("Visez le code-barres")
+    # On affiche le scanner dans un composant HTML
+    components.html(scanner_js, height=380)
 
-    if img_file:
-        with st.spinner("Analyse en cours..."):
-            img = Image.open(img_file)
-            img.thumbnail((800, 800))
-            buffer = io.BytesIO()
-            img.save(buffer, format="JPEG")
-            img_bytes = buffer.getvalue()
-            code = scan_zxing(img_bytes) or scan_off(img_bytes) or scan_barcodelookup(img_bytes) or scan_inlite(img_bytes)
-            if code:
-                st.session_state.code_detecte = code
-                st.success(f"✅ Code détecté : {code}")
-            else:
-                st.error("❌ Impossible de lire le code.")
+# Champ caché/récupérateur pour le JS (et modifiable manuellement)
+final_code = st.text_input(
+    "Code détecté :", 
+    value=st.session_state.code_detecte, 
+    key="js_code_input"
+).strip()
 
 st.divider()
-final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
-# --- 5. RECHERCHE BIGQUERY (VUE V6) ---
+# --- 4. RECHERCHE BIGQUERY (VUE V6) ---
 if final_code:
     try:
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
@@ -164,7 +141,7 @@ if final_code:
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
             FROM `{TABLE_ID}` 
             WHERE CAST(Code_barre AS STRING) = '{final_code}'
-               OR SAFE_CAST(Code_barre AS INT64) = SAFE_CAST('{final_code}' AS INT64)
+                OR SAFE_CAST(Code_barre AS INT64) = SAFE_CAST('{final_code}' AS INT64)
             LIMIT 1
         """
         df_p = client.query(query_p).to_dataframe()
@@ -173,14 +150,14 @@ if final_code:
             p = df_p.iloc[0]
             famille_clean = p['Famille'].replace("'", "''")
             
-            c_img, c_txt = st.columns([1, 4])
+            c_img, c_txt = st.columns([1, 2])
             with c_img:
-                if p['Url_image_small']: st.image(p['Url_image_small'], width=150)
+                if p['Url_image_small']: st.image(p['Url_image_small'], use_container_width=True)
             with c_txt:
-                st.markdown(f"## [{p['Product_name']}]({p['Url']})")
+                st.markdown(f"### [{p['Product_name']}]({p['Url']})")
                 st.info(f"Famille : {p['Famille']} | Score : {p['Secret_Score']}")
 
-            st.write(f"### 📊 Comparaison dans la catégorie : {p['Famille']}")
+            st.write(f"### 📊 Comparaison : {p['Famille']}")
             
             query_alt = f"""
                 SELECT Url_image_small, Product_name, Secret_Score, Url 
@@ -191,20 +168,19 @@ if final_code:
             df_alt = client.query(query_alt).to_dataframe()
 
             if not df_alt.empty:
-                col_top, col_flop = st.columns(2)
+                # Sur mobile, on empile les sections pour la lisibilité
+                st.success("🏆 TOP 3 PRODUITS")
                 config = {
                     "Url_image_small": st.column_config.ImageColumn("Photo"), 
                     "Secret_Score": "Score", 
                     "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
                 }
-                with col_top:
-                    st.success("🏆 TOP 3")
-                    st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
-                with col_flop:
-                    st.error("📉 FLOP 3")
-                    st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
+                st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
+                
+                st.error("📉 FLOP 3 PRODUITS")
+                st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Produit {final_code} inconnu dans la base V5.")
+            st.warning(f"Produit {final_code} inconnu.")
     except Exception as e:
         st.error(f"Erreur lors de la recherche : {e}")
 
