@@ -94,24 +94,36 @@ st.title("🍎 NutriGuide - Mobile Scan")
 st.subheader("📷 Scanner un produit")
 
 # Le composant HTML5-QRCode permet de scanner en flux continu
+# Le composant HTML5-QRCode avec un pont de communication renforcé
 scanner_js = """
 <script src="https://unpkg.com/html5-qrcode"></script>
 <div id="reader" style="width:100%;"></div>
 <script>
     function onScanSuccess(decodedText, decodedResult) {
-        // Envoie le résultat à Streamlit via l'API interne
-        const result = decodedText;
+        // 1. Envoyer la valeur au widget Streamlit
+        const inputs = window.parent.document.querySelectorAll('input');
+        // On cherche le champ texte qui correspond à notre widget
+        for (let input of inputs) {
+            if (input.ariaLabel === "Code détecté :") {
+                input.value = decodedText;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new Event('blur', { bubbles: true }));
+            }
+        }
+        
+        // 2. Méthode de secours via postMessage
         window.parent.postMessage({
             type: 'streamlit:set_widget_value',
-            data: result,
+            data: decodedText,
             widgetId: 'js_code_input'
         }, '*');
     }
 
     let html5QrcodeScanner = new Html5QrcodeScanner(
         "reader", 
-        { fps: 10, qrbox: {width: 280, height: 180}, aspectRatio: 1.0 }, 
-        /* verbose= */ false
+        { fps: 15, qrbox: {width: 280, height: 180}, aspectRatio: 1.0 }, 
+        false
     );
     html5QrcodeScanner.render(onScanSuccess);
 </script>
