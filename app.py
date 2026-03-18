@@ -89,7 +89,7 @@ components.html("""
     </script>
 """, height=0)
 
-st.title("🍎 Assistant NutriGuide - V6")
+st.title("🍎 Assistant NutriGuide - V7")
 
 # --- 3. FONCTIONS DE SCAN ---
 def scan_zxing(img_bytes):
@@ -155,10 +155,10 @@ if activer_scan:
 st.divider()
 final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
 
-# --- 5. RECHERCHE BIGQUERY (VUE V6) ---
+# --- 5. RECHERCHE BIGQUERY (VUE V7) ---
 if final_code:
     try:
-        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
+        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v7"
         
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
@@ -204,7 +204,7 @@ if final_code:
                     st.error("📉 FLOP 3")
                     st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Produit {final_code} inconnu dans la base V5.")
+            st.warning(f"Produit {final_code} inconnu dans la base V7.")
     except Exception as e:
         st.error(f"Erreur lors de la recherche : {e}")
 
