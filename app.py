@@ -37,14 +37,8 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
-# Initialisation des variables de session
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
-
-# Récupération automatique si scan via URL
-if "code" in st.query_params:
-    st.session_state.code_detecte = st.query_params["code"]
-    st.query_params.clear()
 
 st.markdown("""
     <style>
@@ -57,29 +51,35 @@ st.title("🍎 Assistant NutriGuide - V6")
 
 # --- 3. INTERFACE DE SAISIE ---
 
-# Si aucun code n'est actif, on propose le scanner
-if not st.session_state.code_detecte:
-    st.subheader("📷 Scanner un produit")
-    scanner_html = """
-    <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden;"></div>
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-        function onScanSuccess(decodedText) {
-            html5QrcodeScanner.clear().then(() => {
-                const url = new URL(window.location.href);
-                url.searchParams.set('code', decodedText);
-                window.parent.location.href = url.href;
-            });
+# Le Scanner (il remplit le champ en dessous)
+st.subheader("📷 Scanner un produit")
+scanner_html = """
+<div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden;"></div>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+    function onScanSuccess(decodedText) {
+        // 1. On cherche l'input dans la page parente
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        if (inputs.length > 0) {
+            const targetInput = inputs[0];
+            // 2. On injecte la valeur
+            targetInput.value = decodedText;
+            // 3. On simule la saisie pour que Streamlit le détecte
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // 4. On arrête le scanner pour libérer la caméra
+            html5QrcodeScanner.clear();
         }
-        let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
-        html5QrcodeScanner.render(onScanSuccess);
-    </script>
-    """
-    components.html(scanner_html, height=350)
+    }
+    let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
+    html5QrcodeScanner.render(onScanSuccess);
+</script>
+"""
+components.html(scanner_html, height=350)
 
-# CHAMP DE SAISIE MANUELLE
-# On utilise le session_state pour que la valeur persiste
-input_val = st.text_input("Tapez ou modifiez le code barre :", value=st.session_state.code_detecte)
+# CHAMP DE SAISIE (Rempli par le scanner ou manuellement)
+input_val = st.text_input("Code détecté (modifiable) :", value=st.session_state.code_detecte)
 
 if st.button("🔍 ANALYSER LE PRODUIT"):
     st.session_state.code_detecte = input_val.strip()
