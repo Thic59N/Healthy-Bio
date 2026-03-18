@@ -59,7 +59,7 @@ div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; fon
 st.title("🍎 Assistant NutriGuide - V7")
 
 # --- 3. SCANNER ---
-if not st.session_state.code_detecte:
+if st.session_state.code_detecte == "":
     st.subheader("📷 Scanner un produit")
 
     scanner_html = """
@@ -67,14 +67,18 @@ if not st.session_state.code_detecte:
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
         function onScanSuccess(decodedText, decodedResult) {
-            html5QrcodeScanner.clear(); // STOP SCAN
+            html5QrcodeScanner.clear();
 
             const inputs = window.parent.document.querySelectorAll('input[type="text"]');
             if (inputs.length > 0) {
                 inputs[0].value = decodedText;
                 inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-                inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
             }
+
+            // 🔥 Force refresh Streamlit
+            setTimeout(() => {
+                window.parent.location.reload();
+            }, 300);
         }
 
         let html5QrcodeScanner = new Html5QrcodeScanner(
@@ -88,10 +92,23 @@ if not st.session_state.code_detecte:
     """
     components.html(scanner_html, height=380)
 
-# Champ texte
-final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
+# --- INPUT ---
+final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte)
 
-# 🔥 AUTO ANALYSE (remplace le bouton)
+# --- BOUTONS ---
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("🔍 ANALYSER LE PRODUIT"):
+        st.session_state.code_detecte = final_code
+        st.rerun()
+
+with col2:
+    if st.button("🔄 NOUVEAU SCAN"):
+        st.session_state.code_detecte = ""
+        st.rerun()
+
+# --- AUTO DETECTION ---
 if final_code and final_code != st.session_state.code_detecte:
     st.session_state.code_detecte = final_code
     st.rerun()
@@ -161,8 +178,3 @@ if st.session_state.code_detecte and client:
 
     except Exception as e:
         st.error(f"Erreur : {e}")
-
-# --- RESET ---
-if st.button("🔄 NOUVEAU SCAN"):
-    st.session_state.code_detecte = ""
-    st.rerun()
