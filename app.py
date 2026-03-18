@@ -8,7 +8,7 @@ import sys
 import streamlit.components.v1 as components
 from google.oauth2 import service_account
 
-# --- 0. CONNEXION BIGQUERY (Bloc V7) ---
+# --- 0. CONNEXION BIGQUERY ---
 try:
     from google.cloud import bigquery
 except (ImportError, ModuleNotFoundError):
@@ -86,32 +86,38 @@ col_btn1, col_btn2 = st.columns(2)
 with col_btn1:
     if st.button("📥 RÉCUPÉRER LE SCAN", use_container_width=True):
         try:
-            # On récupère les dernières secondes de messages pour être sûr
             resp = requests.get(f"{bridge_url}/json?poll=1", timeout=5)
             if resp.status_code == 200 and resp.text.strip():
-                # On sépare les lignes et on cherche celle qui contient un "message"
                 lines = resp.text.strip().split('\n')
                 found = False
-                for line in reversed(lines): # On part du plus récent
+                for line in reversed(lines):
                     data = json.loads(line)
                     if "message" in data and data["message"]:
                         st.session_state.code_detecte = str(data["message"]).strip()
                         found = True
                         break
-                
                 if found:
                     st.rerun()
                 else:
-                    st.warning("Le serveur est prêt, mais aucun code n'a été reçu.")
+                    st.warning("Aucun code n'a été trouvé sur le serveur.")
             else:
-                st.info("En attente de l'envoi du code depuis le scanner...")
-        except Exception as e:
-            # On n'affiche l'erreur que si on n'a vraiment rien en mémoire
+                st.info("En attente de l'envoi du code...")
+        except Exception:
             if not st.session_state.code_detecte:
-                st.error("Connexion au serveur interrompue. Réessayez.")
+                st.error("Serveur injoignable.")
 
-# --- 4. EXÉCUTION DE LA RECHERCHE BIGQUERY ---
-if final_code:
+with col_btn2:
+    if st.button("🔄 NOUVEAU SCAN", use_container_width=True):
+        st.session_state.code_detecte = ""
+        st.session_state.session_id = str(int(time.time()))
+        st.rerun()
+
+st.divider()
+
+# --- 4. CHAMP DE SAISIE & ANALYSE ---
+final_code = st.text_input("Code produit à analyser :", value=st.session_state.code_detecte).strip()
+
+if final_code and client:
     try:
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v7"
         
