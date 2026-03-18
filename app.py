@@ -1,6 +1,9 @@
 import streamlit as st
 import json
 import os
+import requests
+from PIL import Image
+import io
 import subprocess
 import sys
 import streamlit.components.v1 as components
@@ -83,7 +86,8 @@ components.html(scanner_html, height=380)
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
 
 if st.button("🔍 ANALYSER LE PRODUIT", key="btn_analyser"):
-    st.session_state.code_detecte = final_code
+    # Fix : On sauvegarde la valeur du widget dans le state avant le rerun
+    st.session_state.code_detecte = st.session_state["input_code"]
     st.rerun()
 
 st.divider()
