@@ -47,7 +47,7 @@ st.markdown("""
     <style>
     .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
     #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; margin-bottom: 10px; }
-    div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; font-weight: bold; color: #1a2336; }
+    div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; font-weight: bold; color: #1a2336; font-size: 1.2rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -56,24 +56,28 @@ st.title("🍎 Assistant NutriGuide - V6")
 # --- 3. SCANNER ---
 st.subheader("📷 Scanner un produit")
 
-# Scanner avec arrêt auto et clic différé
+# Scanner optimisé : Injection -> Délai -> Arrêt -> Clic
 scanner_html = """
 <div id="reader" style="width:100%;"></div>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText, decodedResult) {
-        // 1. Arrêter immédiatement le scanner
-        html5QrcodeScanner.clear();
-        
+        // 1. Trouver l'input dans le document parent
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        
         if (inputs.length > 0) {
-            // 2. Injecter le code
-            inputs[0].value = decodedText;
-            inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-            inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
-            
-            // 3. Cliquer sur Analyser après un délai de sécurité
+            // 2. Injecter la valeur immédiatement
+            let targetInput = inputs[0];
+            targetInput.value = decodedText;
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // 3. Petite pause pour laisser Streamlit digérer l'info
             setTimeout(() => {
+                // Arrêter le scanner
+                html5QrcodeScanner.clear();
+                
+                // Cliquer sur le bouton d'analyse
                 const buttons = window.parent.document.querySelectorAll('button');
                 for (let btn of buttons) {
                     if (btn.innerText.includes("ANALYSER")) {
@@ -81,7 +85,7 @@ scanner_html = """
                         break;
                     }
                 }
-            }, 500);
+            }, 400);
         }
     }
     let html5QrcodeScanner = new Html5QrcodeScanner(
@@ -93,7 +97,7 @@ scanner_html = """
 
 components.html(scanner_html, height=380)
 
-# Champ texte
+# Champ texte (bien visible)
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
 
 # Analyse
