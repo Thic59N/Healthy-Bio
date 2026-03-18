@@ -40,6 +40,7 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
+# Initialisation de la session state
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
@@ -56,40 +57,41 @@ st.title("🍎 Assistant NutriGuide - V6")
 # --- 3. SCANNER ---
 st.subheader("📷 Scanner un produit")
 
-# Scanner optimisé : Injection -> Délai -> Arrêt -> Clic
-scanner_html = """
+# Scanner optimisé : Injection -> Persistence -> Clic
+scanner_html = f"""
 <div id="reader" style="width:100%;"></div>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText, decodedResult) {
-        // 1. Trouver l'input dans le document parent
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
         
         if (inputs.length > 0) {
-            // 2. Injecter la valeur immédiatement
+            // Injection
             let targetInput = inputs[0];
             targetInput.value = decodedText;
-            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+            targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
 
-            // 3. Petite pause pour laisser Streamlit digérer l'info
-            setTimeout(() => {
-                // Arrêter le scanner
-                html5QrcodeScanner.clear();
-                
-                // Cliquer sur le bouton d'analyse
-                const buttons = window.parent.document.querySelectorAll('button');
-                for (let btn of buttons) {
-                    if (btn.innerText.includes("ANALYSER")) {
-                        btn.click();
-                        break;
+            // On attend que Streamlit traite l'input
+            setTimeout(() => {{
+                // On arrête le scanner proprement
+                html5QrcodeScanner.clear().then(() => {{
+                    // On clique sur le bouton ANALYSER
+                    const buttons = window.parent.document.querySelectorAll('button');
+                    for (let btn of buttons) {{
+                        if (btn.innerText.includes("ANALYSER")) {{
+                            btn.click();
+                            break;
+                        }
                     }
-                }
-            }, 400);
+                }}).catch(err => {{
+                    console.error("Erreur stop scanner", err);
+                }});
+            }}, 500);
         }
     }
     let html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
+        "reader", {{ fps: 20, qrbox: {{width: 250, height: 150}} }}, false
     );
     html5QrcodeScanner.render(onScanSuccess);
 </script>
@@ -97,13 +99,13 @@ scanner_html = """
 
 components.html(scanner_html, height=380)
 
-# Champ texte (bien visible)
+# Champ texte relié à la session state
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
 
-# Analyse
+# Analyse : Ce bouton devient le déclencheur de la recherche
 if st.button("🔍 ANALYSER LE PRODUIT", key="btn_analyser"):
     st.session_state.code_detecte = final_code
-    st.rerun()
+    # Pas besoin de rerun ici, le script va continuer naturellement vers la recherche ci-dessous
 
 st.divider()
 
@@ -145,11 +147,11 @@ if st.session_state.code_detecte and client:
 
             if not df_alt.empty:
                 col_top, col_flop = st.columns(2)
-                config = {
+                config = {{
                     "Url_image_small": st.column_config.ImageColumn("Photo"), 
                     "Secret_Score": "Score", 
                     "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
-                }
+                }}
                 with col_top:
                     st.success("🏆 TOP 3")
                     st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
