@@ -37,8 +37,11 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
+# Initialisation des variables de session
 if "code_recherche" not in st.session_state:
     st.session_state.code_recherche = ""
+if "scan_display_val" not in st.session_state:
+    st.session_state.scan_display_val = ""
 
 st.markdown("""
     <style>
@@ -58,11 +61,12 @@ scanner_html = """
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText) {
-        // Cible le deuxième champ texte (Code détecté par scan)
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
         if (inputs.length > 1) {
+            // On injecte dans le deuxième champ
             inputs[1].value = decodedText;
             inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+            inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
         }
         html5QrcodeScanner.clear();
     }
@@ -76,8 +80,8 @@ components.html(scanner_html, height=350)
 # Premier champ : Pour la saisie manuelle et l'analyse
 code_manuel = st.text_input("Code manuel :", value=st.session_state.code_recherche)
 
-# Deuxième champ : Affichage simple du scan (lecture seule via JS)
-st.text_input("Code détecté par le scan :", value="", key="scan_display")
+# Deuxième champ : Affichage du scan avec mémoire de session pour éviter la disparition
+st.text_input("Code détecté par le scan :", value=st.session_state.scan_display_val, key="scan_display_val")
 
 if st.button("🔍 ANALYSER LE PRODUIT"):
     st.session_state.code_recherche = code_manuel.strip()
@@ -141,4 +145,5 @@ if st.session_state.code_recherche and client:
 
 if st.button("🔄 NOUVEAU SCAN / RESET"):
     st.session_state.code_recherche = ""
+    st.session_state.scan_display_val = ""
     st.rerun()
