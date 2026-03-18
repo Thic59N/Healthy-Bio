@@ -53,32 +53,63 @@ st.title("🍎 Assistant NutriGuide - V6")
 
 st.subheader("📷 Scanner un produit")
 
-# Ici, le champ "Code détecté" est en pur HTML/JS. 
-# Streamlit ne le voit pas, donc il ne peut pas l'effacer.
+# Bloc HTML avec bouton de transfert automatique
 scanner_html = """
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden; margin-bottom:10px;"></div>
 <div style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8;">
-    <label style="font-family: sans-serif; font-weight: bold; color: #1a2336;">Code détecté (Copiez-le ici) :</label>
-    <input type="text" id="result_field" style="width: 100%; padding: 10px; margin-top: 5px; border-radius: 5px; border: 1px solid #ccc; font-size: 1.2rem; font-weight: bold;" readonly>
-    <p style="font-size: 0.8rem; color: #555; margin-top: 5px;">Double-cliquez pour sélectionner et copier.</p>
+    <label style="font-family: sans-serif; font-weight: bold; color: #1a2336;">Code détecté :</label>
+    <div style="display: flex; gap: 10px; margin-top: 5px;">
+        <input type="text" id="result_field" style="flex-grow: 1; padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 1.2rem; font-weight: bold;" readonly>
+        <button onclick="transferCode()" style="padding: 10px 20px; background-color: #1a73e8; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">
+            ➡️ Transférer
+        </button>
+    </div>
 </div>
 
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText) {
-        // On écrit dans le champ HTML interne au composant
         document.getElementById('result_field').value = decodedText;
-        // On arrête le scanner
-        html5QrcodeScanner.clear();
+        // On ne coupe pas forcément le scanner tout de suite si on veut re-scanner
     }
+
+    function transferCode() {
+        const code = document.getElementById('result_field').value;
+        if (!code) return;
+
+        // On cherche le champ "Code manuel" de Streamlit dans la page parente
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        if (inputs.length > 0) {
+            const targetInput = inputs[0];
+            targetInput.value = code;
+            
+            // On simule la saisie humaine pour Streamlit
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // Optionnel : On peut aussi cliquer sur le bouton Analyser automatiquement
+            /*
+            setTimeout(() => {
+                const buttons = window.parent.document.querySelectorAll('button');
+                for (let btn of buttons) {
+                    if (btn.innerText.includes("ANALYSER")) {
+                        btn.click();
+                        break;
+                    }
+                }
+            }, 100);
+            */
+        }
+    }
+
     let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 """
 components.html(scanner_html, height=520)
 
-# Champ Streamlit normal pour l'analyse
-code_manuel = st.text_input("Code manuel (Collez le code ici) :", value=st.session_state.code_recherche)
+# Champ Streamlit normal
+code_manuel = st.text_input("Code manuel (reçoit le transfert) :", value=st.session_state.code_recherche)
 
 if st.button("🔍 ANALYSER LE PRODUIT"):
     st.session_state.code_recherche = code_manuel.strip()
