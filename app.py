@@ -48,15 +48,7 @@ st.set_page_config(page_title="NutriGuide", layout="wide")
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
-st.markdown("""
-<style>
-.stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
-#reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; margin-bottom: 10px; }
-div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; font-weight: bold; color: #1a2336; font-size: 1.2rem; }
-</style>
-""", unsafe_allow_html=True)
-
-st.title("🍎 Assistant NutriGuide - V7")
+st.title("🍎 Assistant NutriGuide - V8")
 
 # --- 3. SCANNER ---
 if st.session_state.code_detecte == "":
@@ -74,11 +66,6 @@ if st.session_state.code_detecte == "":
                 inputs[0].value = decodedText;
                 inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
             }
-
-            // 🔥 Force refresh Streamlit
-            setTimeout(() => {
-                window.parent.location.reload();
-            }, 300);
         }
 
         let html5QrcodeScanner = new Html5QrcodeScanner(
@@ -95,23 +82,16 @@ if st.session_state.code_detecte == "":
 # --- INPUT ---
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte)
 
-# --- BOUTONS ---
-col1, col2 = st.columns(2)
-
-with col1:
-    if st.button("🔍 ANALYSER LE PRODUIT"):
-        st.session_state.code_detecte = final_code
-        st.rerun()
-
-with col2:
-    if st.button("🔄 NOUVEAU SCAN"):
-        st.session_state.code_detecte = ""
-        st.rerun()
-
-# --- AUTO DETECTION ---
+# --- AUTO ANALYSE PROPRE ---
 if final_code and final_code != st.session_state.code_detecte:
     st.session_state.code_detecte = final_code
     st.rerun()
+
+# --- RESET ---
+if st.session_state.code_detecte:
+    if st.button("🔄 NOUVEAU SCAN"):
+        st.session_state.code_detecte = ""
+        st.rerun()
 
 st.divider()
 
