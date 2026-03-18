@@ -46,39 +46,52 @@ if "code_detecte" not in st.session_state:
 topic_bridge = f"nutriguide_{st.session_state.session_id}"
 bridge_url = f"https://ntfy.sh/{topic_bridge}"
 
-st.title("🍎 Assistant NutriGuide - V7")
+st.title("🍎 Assistant NutriGuide - V7 (Auto-Send)")
 
-# --- 2. LE SCANNER ---
+# --- 2. LE SCANNER (MODIFIÉ POUR ENVOI AUTO) ---
 st.subheader("📷 Scanner un produit")
 
 scanner_html = f"""
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden; margin-bottom:10px;"></div>
-<div style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8; text-align: center;">
-    <div id="code_display" style="font-size: 1.4rem; font-weight: bold; color: #1a73e8; margin-bottom:10px;">Visez un code-barres...</div>
-    <button id="send_btn" style="display:none; width: 100%; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;">
-        🚀 ENVOYER AU SERVEUR
-    </button>
+<div id="status_box" style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8; text-align: center;">
+    <div id="code_display" style="font-size: 1.4rem; font-weight: bold; color: #1a73e8;">Visez un code-barres...</div>
+    <div id="loading_msg" style="display:none; margin-top:10px; color: #28a745; font-weight: bold;">⏳ Envoi automatique au serveur...</div>
 </div>
 
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     let detectedCode = "";
+    
     function onScanSuccess(decodedText) {{
         detectedCode = decodedText;
         document.getElementById('code_display').innerText = "Code détecté : " + decodedText;
-        document.getElementById('send_btn').style.display = "block";
+        document.getElementById('loading_msg').style.display = "block";
+        
+        // Arrêt immédiat du scanner pour éviter les scans multiples
         if (window.html5QrcodeScanner) {{ window.html5QrcodeScanner.clear(); }}
+
+        // Délai de 30ms avant l'envoi automatique
+        setTimeout(function() {{
+            fetch('{bridge_url}', {{ 
+                method: 'POST', 
+                body: detectedCode 
+            }})
+            .then(() => {{ 
+                document.getElementById('loading_msg').innerText = "✅ Transmis au serveur !";
+                document.getElementById('status_box').style.backgroundColor = "#d4edda";
+            }})
+            .catch(err => {{
+                document.getElementById('loading_msg').innerText = "❌ Erreur d'envoi";
+                document.getElementById('loading_msg').style.color = "red";
+            }});
+        }}, 30);
     }}
-    document.getElementById('send_btn').onclick = function() {{
-        this.innerText = "⏳ Transmission...";
-        fetch('{bridge_url}', {{ method: 'POST', body: detectedCode }})
-        .then(() => {{ this.innerText = "✅ Transmis !"; this.style.backgroundColor = "#28a745"; }});
-    }};
+
     window.html5QrcodeScanner = new Html5QrcodeScanner("reader", {{ fps: 20, qrbox: 250 }}, false);
     window.html5QrcodeScanner.render(onScanSuccess);
 </script>
 """
-components.html(scanner_html, height=550)
+components.html(scanner_html, height=500)
 
 # --- 3. RÉCUPÉRATION ET RECHERCHE ---
 
@@ -101,7 +114,7 @@ with col_btn1:
                 else:
                     st.warning("Aucun code n'a été trouvé sur le serveur.")
             else:
-                st.info("En attente de l'envoi du code...")
+                st.info("Le code n'est pas encore arrivé sur le serveur...")
         except Exception:
             if not st.session_state.code_detecte:
                 st.error("Serveur injoignable.")
