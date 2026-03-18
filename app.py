@@ -58,8 +58,8 @@ scanner_html = """
 <div style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8;">
     <label style="font-family: sans-serif; font-weight: bold; color: #1a2336; display: block; margin-bottom: 5px;">Code détecté :</label>
     <input type="text" id="result_field" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.3rem; font-weight: bold; box-sizing: border-box;" readonly>
-    <button onclick="copyAndTransfer()" style="width: 100%; margin-top: 10px; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
-        ⚡ COLLER DANS LE CHAMP MANUEL
+    <button onclick="simulateTyping()" style="width: 100%; margin-top: 10px; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
+        ⚡ INJECTER LE CODE (SIMULATION CLAVIER)
     </button>
 </div>
 
@@ -70,29 +70,33 @@ scanner_html = """
         html5QrcodeScanner.clear();
     }
     
-    function copyAndTransfer() {
-        var code = document.getElementById("result_field").value;
+    function simulateTyping() {
+        const code = document.getElementById("result_field").value;
         if (!code) return;
         
-        // Recherche du champ Streamlit dans la page parente
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
         if (inputs.length > 0) {
-            const targetInput = inputs[0]; 
-            
-            // 1. On donne le focus au champ
+            const targetInput = inputs[0];
             targetInput.focus();
+            targetInput.value = ""; // On vide d'abord
             
-            // 2. On injecte la valeur
-            targetInput.value = code;
-            
-            // 3. On déclenche les événements de saisie
-            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            // 4. On enlève le focus pour valider
-            targetInput.blur();
-            
-            console.log("Code injecté et validé : " + code);
+            // Simulation de la frappe caractère par caractère
+            let i = 0;
+            const typeNextChar = () => {
+                if (i < code.length) {
+                    targetInput.value += code[i];
+                    // On envoie les événements natifs que Streamlit écoute
+                    targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    targetInput.dispatchEvent(new KeyboardEvent('keydown', { key: code[i], bubbles: true }));
+                    i++;
+                    setTimeout(typeNextChar, 10); // 10ms entre chaque touche
+                } else {
+                    targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    targetInput.blur();
+                    console.log("Saisie simulée terminée.");
+                }
+            };
+            typeNextChar();
         }
     }
 
