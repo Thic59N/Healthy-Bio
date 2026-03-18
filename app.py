@@ -37,11 +37,8 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
-# Initialisation des variables de session
 if "code_recherche" not in st.session_state:
     st.session_state.code_recherche = ""
-if "scan_display_val" not in st.session_state:
-    st.session_state.scan_display_val = ""
 
 st.markdown("""
     <style>
@@ -54,34 +51,34 @@ st.title("🍎 Assistant NutriGuide - V6")
 
 # --- 3. INTERFACE ---
 
-# 1. SCANNER
 st.subheader("📷 Scanner un produit")
+
+# Ici, le champ "Code détecté" est en pur HTML/JS. 
+# Streamlit ne le voit pas, donc il ne peut pas l'effacer.
 scanner_html = """
-<div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden;"></div>
+<div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden; margin-bottom:10px;"></div>
+<div style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8;">
+    <label style="font-family: sans-serif; font-weight: bold; color: #1a2336;">Code détecté (Copiez-le ici) :</label>
+    <input type="text" id="result_field" style="width: 100%; padding: 10px; margin-top: 5px; border-radius: 5px; border: 1px solid #ccc; font-size: 1.2rem; font-weight: bold;" readonly>
+    <p style="font-size: 0.8rem; color: #555; margin-top: 5px;">Double-cliquez pour sélectionner et copier.</p>
+</div>
+
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText) {
-        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        if (inputs.length > 1) {
-            // On injecte dans le deuxième champ
-            inputs[1].value = decodedText;
-            inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
-            inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        // On écrit dans le champ HTML interne au composant
+        document.getElementById('result_field').value = decodedText;
+        // On arrête le scanner
         html5QrcodeScanner.clear();
     }
     let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 """
-components.html(scanner_html, height=350)
+components.html(scanner_html, height=520)
 
-# 2. LES CHAMPS
-# Premier champ : Pour la saisie manuelle et l'analyse
-code_manuel = st.text_input("Code manuel :", value=st.session_state.code_recherche)
-
-# Deuxième champ : Affichage du scan avec mémoire de session pour éviter la disparition
-st.text_input("Code détecté par le scan :", value=st.session_state.scan_display_val, key="scan_display_val")
+# Champ Streamlit normal pour l'analyse
+code_manuel = st.text_input("Code manuel (Collez le code ici) :", value=st.session_state.code_recherche)
 
 if st.button("🔍 ANALYSER LE PRODUIT"):
     st.session_state.code_recherche = code_manuel.strip()
@@ -145,5 +142,4 @@ if st.session_state.code_recherche and client:
 
 if st.button("🔄 NOUVEAU SCAN / RESET"):
     st.session_state.code_recherche = ""
-    st.session_state.scan_display_val = ""
     st.rerun()
