@@ -37,107 +37,85 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
-# On récupère le code depuis l'URL si il existe
-query_params = st.query_params
-code_url = query_params.get("barcode", "")
-
-if "code_recherche" not in st.session_state:
-    st.session_state.code_recherche = code_url
-
-st.markdown("""
-    <style>
-    .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
-    div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; font-weight: bold; color: #1a2336; font-size: 1.2rem; }
-    </style>
-    """, unsafe_allow_html=True)
+# Initialisation de la mémoire Python
+if "code_scanne" not in st.session_state:
+    st.session_state.code_scanne = ""
 
 st.title("🍎 Assistant NutriGuide - V6")
 
-# --- 3. INTERFACE ---
+# --- 3. LE SCANNER (Envoie l'info à Python via l'URL) ---
 
 st.subheader("📷 Scanner un produit")
 
+# Le bouton bleu ici utilise une redirection URL que Python intercepte immédiatement
 scanner_html = """
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden; margin-bottom:10px;"></div>
-<div style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8;">
-    <label style="font-family: sans-serif; font-weight: bold; color: #1a2336; display: block; margin-bottom: 5px;">Code détecté :</label>
-    <input type="text" id="result_field" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.3rem; font-weight: bold; box-sizing: border-box;" readonly>
-    <button onclick="sendToUrl()" style="width: 100%; margin-top: 10px; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
-        🚀 ENVOYER POUR ANALYSE
+<div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; border: 1px solid #ccc; text-align: center;">
+    <b style="font-family: sans-serif;">Code détecté :</b><br>
+    <span id="display_code" style="font-size: 1.5rem; font-weight: bold; color: #1a73e8;">... en attente ...</span>
+    <button id="send_btn" style="display:none; width: 100%; margin-top: 10px; padding: 15px; background-color: #28a745; color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 1.1rem; cursor: pointer;">
+        ✅ VALIDER CE PRODUIT
     </button>
 </div>
 
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
+    const display = document.getElementById('display_code');
+    const btn = document.getElementById('send_btn');
+    let lastCode = "";
+
     function onScanSuccess(decodedText) {
-        document.getElementById('result_field').value = decodedText;
-        html5QrcodeScanner.clear();
+        lastCode = decodedText;
+        display.innerText = decodedText;
+        btn.style.display = "block"; // On montre le bouton quand un code est trouvé
     }
-    
-    function sendToUrl() {
-        const code = document.getElementById("result_field").value;
-        if (!code) return;
-        
-        // On recharge la page avec le paramètre barcode dans l'URL
+
+    btn.onclick = function() {
+        // On envoie le code à Python en rechargeant proprement l'URL parente
         const url = new URL(window.parent.location.href);
-        url.searchParams.set('barcode', code);
+        url.searchParams.set('barcode', lastCode);
         window.parent.location.href = url.href;
-    }
+    };
 
     let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 """
-components.html(scanner_html, height=580)
+components.html(scanner_html, height=550)
 
-# Le champ manuel prend par défaut la valeur de l'URL
-code_manuel = st.text_input("Code actuel :", value=st.session_state.code_recherche)
+# --- 4. RÉCUPÉRATION PAR PYTHON ---
 
-if st.button("🔍 ANALYSER LE PRODUIT") or (code_url and not st.session_state.code_recherche):
-    st.session_state.code_recherche = code_manuel.strip() if code_manuel else code_url
-    st.rerun()
+# Python regarde si un code est présent dans l'URL
+query_params = st.query_params
+if "barcode" in query_params:
+    st.session_state.code_scanne = query_params["barcode"]
 
-st.divider()
+# Affichage du code récupéré par Python
+code_final = st.text_input("Code détecté (récupéré par Python) :", value=st.session_state.code_scanne)
 
-# --- 4. RECHERCHE BIGQUERY ---
-# (Le reste du code reste identique pour la recherche BigQuery)
-if st.session_state.code_recherche and client:
-    try:
-        code_a_chercher = st.session_state.code_recherche
-        TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
-        
-        query_p = f"SELECT Product_name, Famille, Secret_Score, Url_image_small, Url FROM `{TABLE_ID}` WHERE CAST(Code_barre AS STRING) = '{code_a_chercher}' OR SAFE_CAST(Code_barre AS INT64) = SAFE_CAST('{code_a_chercher}' AS INT64) LIMIT 1"
-        df_p = client.query(query_p).to_dataframe()
+if st.button("🔍 ANALYSER LE PRODUIT") or (st.session_state.code_scanne and "last_analyzed" not in st.session_state):
+    st.session_state.last_analyzed = st.session_state.code_scanne
+    # Lancement de la recherche BigQuery...
+    if client and code_final:
+        try:
+            TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
+            query = f"SELECT Product_name, Famille, Secret_Score, Url_image_small, Url FROM `{TABLE_ID}` WHERE CAST(Code_barre AS STRING) = '{code_final}' LIMIT 1"
+            df = client.query(query).to_dataframe()
 
-        if not df_p.empty:
-            p = df_p.iloc[0]
-            famille_clean = p['Famille'].replace("'", "''")
-            c_img, c_txt = st.columns([1, 4])
-            with c_img:
-                if p['Url_image_small']: st.image(p['Url_image_small'], width=150)
-            with c_txt:
-                st.markdown(f"## [{p['Product_name']}]({p['Url']})")
-                st.info(f"Famille : {p['Famille']} | Score : {p['Secret_Score']}")
+            if not df.empty:
+                p = df.iloc[0]
+                st.divider()
+                c1, c2 = st.columns([1, 3])
+                with c1: st.image(p['Url_image_small'])
+                with c2: 
+                    st.header(p['Product_name'])
+                    st.info(f"Score : {p['Secret_Score']} | Catégorie : {p['Famille']}")
+            else:
+                st.warning("Produit inconnu.")
+        except Exception as e:
+            st.error(f"Erreur : {e}")
 
-            st.write(f"### 📊 Comparaison : {p['Famille']}")
-            query_alt = f"SELECT Url_image_small, Product_name, Secret_Score, Url FROM `{TABLE_ID}` WHERE Famille = '{famille_clean}' ORDER BY Secret_Score DESC"
-            df_alt = client.query(query_alt).to_dataframe()
-
-            if not df_alt.empty:
-                col_top, col_flop = st.columns(2)
-                config = {"Url_image_small": st.column_config.ImageColumn("Photo"), "Secret_Score": "Score", "Url": st.column_config.LinkColumn("Lien", display_text="🌐")}
-                with col_top:
-                    st.success("🏆 TOP 3")
-                    st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
-                with col_flop:
-                    st.error("📉 FLOP 3")
-                    st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
-        else:
-            st.warning(f"Produit '{code_a_chercher}' inconnu.")
-    except Exception as e:
-        st.error(f"Erreur BigQuery : {e}")
-
-if st.button("🔄 NOUVEAU SCAN / RESET"):
-    st.session_state.code_recherche = ""
+if st.button("🔄 RESET"):
     st.query_params.clear()
+    st.session_state.code_scanne = ""
     st.rerun()
