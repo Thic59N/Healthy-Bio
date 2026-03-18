@@ -37,8 +37,8 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
-if "code_detecte" not in st.session_state:
-    st.session_state.code_detecte = ""
+if "code_recherche" not in st.session_state:
+    st.session_state.code_recherche = ""
 
 st.markdown("""
     <style>
@@ -49,28 +49,22 @@ st.markdown("""
 
 st.title("🍎 Assistant NutriGuide - V6")
 
-# --- 3. INTERFACE DE SAISIE ---
+# --- 3. INTERFACE ---
 
-# Le Scanner (il remplit le champ en dessous)
+# 1. SCANNER
 st.subheader("📷 Scanner un produit")
 scanner_html = """
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden;"></div>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText) {
-        // 1. On cherche l'input dans la page parente
+        // Cible le deuxième champ texte (Code détecté par scan)
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        if (inputs.length > 0) {
-            const targetInput = inputs[0];
-            // 2. On injecte la valeur
-            targetInput.value = decodedText;
-            // 3. On simule la saisie pour que Streamlit le détecte
-            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
-            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
-            
-            // 4. On arrête le scanner pour libérer la caméra
-            html5QrcodeScanner.clear();
+        if (inputs.length > 1) {
+            inputs[1].value = decodedText;
+            inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
         }
+        html5QrcodeScanner.clear();
     }
     let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
     html5QrcodeScanner.render(onScanSuccess);
@@ -78,19 +72,23 @@ scanner_html = """
 """
 components.html(scanner_html, height=350)
 
-# CHAMP DE SAISIE (Rempli par le scanner ou manuellement)
-input_val = st.text_input("Code détecté (modifiable) :", value=st.session_state.code_detecte)
+# 2. LES CHAMPS
+# Premier champ : Pour la saisie manuelle et l'analyse
+code_manuel = st.text_input("Code manuel :", value=st.session_state.code_recherche)
+
+# Deuxième champ : Affichage simple du scan (lecture seule via JS)
+st.text_input("Code détecté par le scan :", value="", key="scan_display")
 
 if st.button("🔍 ANALYSER LE PRODUIT"):
-    st.session_state.code_detecte = input_val.strip()
+    st.session_state.code_recherche = code_manuel.strip()
     st.rerun()
 
 st.divider()
 
 # --- 4. RECHERCHE BIGQUERY ---
-if st.session_state.code_detecte and client:
+if st.session_state.code_recherche and client:
     try:
-        code_a_chercher = st.session_state.code_detecte
+        code_a_chercher = st.session_state.code_recherche
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
         
         query_p = f"""
@@ -142,5 +140,5 @@ if st.session_state.code_detecte and client:
         st.error(f"Erreur BigQuery : {e}")
 
 if st.button("🔄 NOUVEAU SCAN / RESET"):
-    st.session_state.code_detecte = ""
+    st.session_state.code_recherche = ""
     st.rerun()
