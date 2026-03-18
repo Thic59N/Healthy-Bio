@@ -59,7 +59,7 @@ scanner_html = """
     <label style="font-family: sans-serif; font-weight: bold; color: #1a2336; display: block; margin-bottom: 5px;">Code détecté :</label>
     <input type="text" id="result_field" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.3rem; font-weight: bold; box-sizing: border-box;" readonly>
     <button onclick="copyAndTransfer()" style="width: 100%; margin-top: 10px; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
-        ⚡ COPIER & COLLER AUTOMATIQUEMENT
+        ⚡ COLLER DANS LE CHAMP MANUEL
     </button>
 </div>
 
@@ -74,21 +74,25 @@ scanner_html = """
         var code = document.getElementById("result_field").value;
         if (!code) return;
         
-        // 1. Copie presse-papier (navigateur)
-        navigator.clipboard.writeText(code);
-        
-        // 2. Recherche du champ Streamlit dans la page parente
+        // Recherche du champ Streamlit dans la page parente
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
         if (inputs.length > 0) {
-            const targetInput = inputs[0]; // Le premier champ est "Code manuel"
+            const targetInput = inputs[0]; 
+            
+            // 1. On donne le focus au champ
+            targetInput.focus();
+            
+            // 2. On injecte la valeur
             targetInput.value = code;
             
-            // 3. On force Streamlit à détecter le changement
+            // 3. On déclenche les événements de saisie
             targetInput.dispatchEvent(new Event('input', { bubbles: true }));
             targetInput.dispatchEvent(new Event('change', { bubbles: true }));
             
-            // Petit message visuel
-            console.log("Code transféré : " + code);
+            // 4. On enlève le focus pour valider
+            targetInput.blur();
+            
+            console.log("Code injecté et validé : " + code);
         }
     }
 
@@ -98,8 +102,8 @@ scanner_html = """
 """
 components.html(scanner_html, height=580)
 
-# Champ Streamlit qui recevra le code
-code_manuel = st.text_input("Code manuel (reçoit le code automatiquement) :", value=st.session_state.code_recherche)
+# Champ Streamlit
+code_manuel = st.text_input("Code manuel :", value=st.session_state.code_recherche)
 
 if st.button("🔍 ANALYSER LE PRODUIT"):
     st.session_state.code_recherche = code_manuel.strip()
