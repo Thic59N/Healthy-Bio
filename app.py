@@ -15,8 +15,8 @@ except (ImportError, ModuleNotFoundError):
     subprocess.check_call([sys.executable, "-m", "pip", "install", "google-cloud-bigquery", "db-dtypes", "google-auth"])
     from google.cloud import bigquery
 
-# --- 1. CONFIGURATION ---
-st.set_page_config(page_title="NutriGuide V7 Full Auto", layout="wide")
+# --- 1. CONFIGURATION & IDENTIFIANTS ---
+st.set_page_config(page_title="NutriGuide V7 Bridge", layout="wide")
 
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(int(time.time()))
@@ -47,16 +47,16 @@ def get_bigquery_client():
 
 client = get_bigquery_client()
 
-st.title("🍎 Assistant NutriGuide - Full Auto")
+st.title("🍎 Assistant NutriGuide - V7 (Full Auto)")
 
-# --- 3. LE SCANNER (ENVOI AUTO + TRIGGER RECHARGEMENT) ---
+# --- 3. LE SCANNER (ENVOI AUTO + DECLENCHEMENT RECUPERATION) ---
 st.subheader("📷 Scanner un produit")
 
 scanner_html = f"""
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden; margin-bottom:10px;"></div>
 <div id="status_box" style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8; text-align: center;">
     <div id="code_display" style="font-size: 1.4rem; font-weight: bold; color: #1a73e8;">Visez un code-barres...</div>
-    <div id="loading_msg" style="display:none; margin-top:10px; color: #28a745; font-weight: bold;">🚀 Analyse en cours...</div>
+    <div id="loading_msg" style="display:none; margin-top:10px; color: #28a745; font-weight: bold;">🚀 Analyse automatique en cours...</div>
 </div>
 
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -70,17 +70,16 @@ scanner_html = f"""
         // 1. Envoi au serveur bridge
         fetch('{bridge_url}', {{ method: 'POST', body: decodedText }})
         .then(() => {{
-            // 2. Délai de 30ms avant de déclencher la récupération côté Python
+            // 2. Délai de 30ms avant de demander à Streamlit de récupérer le code
             setTimeout(() => {{
-                // On simule un clic sur un bouton caché de Streamlit ou on force un rechargement
-                window.parent.document.dispatchEvent(new KeyboardEvent('keydown', {{
-                    key: 'r',
-                    ctrlKey: true
-                }}));
-                // On cherche et clique sur le bouton de récupération s'il existe (même s'il est caché)
+                // On cherche le bouton "RÉCUPÉRER LE SCAN" dans l'interface parente et on clique dessus
+                const btnRecup = window.parent.document.querySelector('button[kind="secondaryFormSubmit"], button[data-testid="baseButton-secondary"]');
+                // Alternative : on utilise une astuce de clic sur tous les boutons contenant le texte
                 const buttons = window.parent.document.querySelectorAll('button');
                 buttons.forEach(btn => {{
-                    if(btn.innerText.includes("RÉCUPÉRER")) btn.click();
+                    if(btn.innerText.includes("RÉCUPÉRER LE SCAN")) {{
+                        btn.click();
+                    }}
                 }});
             }}, 30);
         }});
@@ -92,36 +91,43 @@ scanner_html = f"""
 """
 components.html(scanner_html, height=500)
 
-# --- 4. RÉCUPÉRATION AUTOMATIQUE (CACHÉE) ---
+# --- 4. RÉCUPÉRATION ET RECHERCHE ---
 
-# On crée un bouton de récupération "invisible" (dans une petite colonne ou via CSS)
-if st.button("📥 RÉCUPÉRER LE SCAN", use_container_width=True):
-    try:
-        resp = requests.get(f"{bridge_url}/json?poll=1", timeout=5)
-        if resp.status_code == 200 and resp.text.strip():
-            lines = resp.text.strip().split('\n')
-            for line in reversed(lines):
-                data = json.loads(line)
-                if "message" in data and data["message"]:
-                    st.session_state.code_detecte = str(data["message"]).strip()
+col_btn1, col_btn2 = st.columns(2)
+with col_btn1:
+    # Ce bouton est maintenant cliqué automatiquement par le JavaScript ci-dessus
+    if st.button("📥 RÉCUPÉRER LE SCAN", use_container_width=True):
+        try:
+            resp = requests.get(f"{bridge_url}/json?poll=1", timeout=5)
+            if resp.status_code == 200 and resp.text.strip():
+                lines = resp.text.strip().split('\n')
+                found = False
+                for line in reversed(lines):
+                    data = json.loads(line)
+                    if "message" in data and data["message"]:
+                        st.session_state.code_detecte = str(data["message"]).strip()
+                        found = True
+                        break
+                if found:
                     st.rerun()
-    except:
-        pass
+        except:
+            pass
 
-# Bouton de réinitialisation pour scanner un autre produit
-if st.button("🔄 NOUVEAU SCAN"):
-    st.session_state.code_detecte = ""
-    st.session_state.session_id = str(int(time.time()))
-    st.rerun()
+with col_btn2:
+    if st.button("🔄 NOUVEAU SCAN", use_container_width=True):
+        st.session_state.code_detecte = ""
+        st.session_state.session_id = str(int(time.time()))
+        st.rerun()
 
 st.divider()
 
-# --- 5. ANALYSE ET RÉSULTATS ---
-final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte).strip()
+# --- 5. CHAMP DE SAISIE & ANALYSE ---
+final_code = st.text_input("Code produit à analyser :", value=st.session_state.code_detecte).strip()
 
 if final_code and client:
     try:
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v7"
+        
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
             FROM `{TABLE_ID}` 
@@ -149,11 +155,7 @@ if final_code and client:
 
             if not df_alt.empty:
                 col_top, col_flop = st.columns(2)
-                config = {
-                    "Url_image_small": st.column_config.ImageColumn("Photo"), 
-                    "Secret_Score": "Score", 
-                    "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
-                }
+                config = {"Url_image_small": st.column_config.ImageColumn("Photo"), "Secret_Score": "Score", "Url": st.column_config.LinkColumn("Lien", display_text="🌐")}
                 with col_top:
                     st.success("🏆 TOP 3")
                     st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
@@ -161,6 +163,6 @@ if final_code and client:
                     st.error("📉 FLOP 3")
                     st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Le produit {final_code} est inconnu.")
+            st.warning(f"Le produit {final_code} est inconnu dans la base V7.")
     except Exception as e:
         st.error(f"Erreur BigQuery : {e}")
