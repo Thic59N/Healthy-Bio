@@ -1,9 +1,6 @@
 import streamlit as st
 import json
 import os
-import requests
-from PIL import Image
-import io
 import subprocess
 import sys
 import streamlit.components.v1 as components
@@ -40,7 +37,6 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
-# Initialisation de la session state
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
@@ -55,57 +51,47 @@ st.markdown("""
 st.title("🍎 Assistant NutriGuide - V6")
 
 # --- 3. SCANNER ---
-st.subheader("📷 Scanner un produit")
+if not st.session_state.code_detecte:
+    st.subheader("📷 Scanner un produit")
+    
+    scanner_html = """
+    <div id="reader" style="width:100%;"></div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        function onScanSuccess(decodedText, decodedResult) {
+            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            if (inputs.length > 0) {
+                // 1. Injecter la valeur
+                inputs[0].value = decodedText;
+                inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+                inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
 
-# Scanner optimisé : Injection -> Persistence -> Clic
-scanner_html = f"""
-<div id="reader" style="width:100%;"></div>
-<script src="https://unpkg.com/html5-qrcode"></script>
-<script>
-    function onScanSuccess(decodedText, decodedResult) {
-        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        
-        if (inputs.length > 0) {
-            // Injection
-            let targetInput = inputs[0];
-            targetInput.value = decodedText;
-            targetInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            targetInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-            // On attend que Streamlit traite l'input
-            setTimeout(() => {{
-                // On arrête le scanner proprement
-                html5QrcodeScanner.clear().then(() => {{
-                    // On clique sur le bouton ANALYSER
+                // 2. Cliquer sur Analyser
+                setTimeout(() => {
                     const buttons = window.parent.document.querySelectorAll('button');
-                    for (let btn of buttons) {{
-                        if (btn.innerText.includes("ANALYSER")) {{
+                    for (let btn of buttons) {
+                        if (btn.innerText.includes("ANALYSER")) {
                             btn.click();
                             break;
                         }
                     }
-                }}).catch(err => {{
-                    console.error("Erreur stop scanner", err);
-                }});
-            }}, 500);
+                }, 300);
+            }
         }
-    }
-    let html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", {{ fps: 20, qrbox: {{width: 250, height: 150}} }}, false
-    );
-    html5QrcodeScanner.render(onScanSuccess);
-</script>
-"""
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
+        );
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+    """
+    components.html(scanner_html, height=380)
 
-components.html(scanner_html, height=380)
-
-# Champ texte relié à la session state
+# Champ texte
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
 
-# Analyse : Ce bouton devient le déclencheur de la recherche
 if st.button("🔍 ANALYSER LE PRODUIT", key="btn_analyser"):
     st.session_state.code_detecte = final_code
-    # Pas besoin de rerun ici, le script va continuer naturellement vers la recherche ci-dessous
+    st.rerun()
 
 st.divider()
 
@@ -147,11 +133,11 @@ if st.session_state.code_detecte and client:
 
             if not df_alt.empty:
                 col_top, col_flop = st.columns(2)
-                config = {{
+                config = {
                     "Url_image_small": st.column_config.ImageColumn("Photo"), 
                     "Secret_Score": "Score", 
                     "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
-                }}
+                }
                 with col_top:
                     st.success("🏆 TOP 3")
                     st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
