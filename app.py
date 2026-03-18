@@ -92,12 +92,15 @@ with col_btn1:
                 data = json.loads(last_line)
                 if "message" in data:
                     st.session_state.code_detecte = data["message"]
-                    st.success(f"Code {data['message']} récupéré !")
-        except: st.warning("Aucun scan trouvé sur le serveur.")
+                    st.rerun() # Relance pour afficher les résultats immédiatement
+        except: 
+            st.warning("Aucun scan trouvé sur le serveur.")
 
 with col_btn2:
     if st.button("🔄 NOUVEAU SCAN", use_container_width=True):
+        # Réinitialisation totale
         st.session_state.code_detecte = ""
+        st.session_state.session_id = str(int(time.time()))
         st.rerun()
 
 st.divider()
