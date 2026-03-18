@@ -56,20 +56,23 @@ st.title("🍎 Assistant NutriGuide - V6")
 # --- 3. SCANNER ---
 st.subheader("📷 Scanner un produit")
 
-# Le scanner HTML avec script de clic renforcé
+# Scanner avec arrêt auto et clic différé
 scanner_html = """
 <div id="reader" style="width:100%;"></div>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText, decodedResult) {
+        // 1. Arrêter immédiatement le scanner
+        html5QrcodeScanner.clear();
+        
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
         if (inputs.length > 0) {
-            // Injection du code
+            // 2. Injecter le code
             inputs[0].value = decodedText;
             inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
             inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
             
-            // Clic forcé sur le bouton ANALYSER
+            // 3. Cliquer sur Analyser après un délai de sécurité
             setTimeout(() => {
                 const buttons = window.parent.document.querySelectorAll('button');
                 for (let btn of buttons) {
@@ -78,7 +81,7 @@ scanner_html = """
                         break;
                     }
                 }
-            }, 300); // Petit délai pour laisser l'input s'enregistrer
+            }, 500);
         }
     }
     let html5QrcodeScanner = new Html5QrcodeScanner(
@@ -93,7 +96,7 @@ components.html(scanner_html, height=380)
 # Champ texte
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
 
-# Utilisation d'un bouton avec une clé stable
+# Analyse
 if st.button("🔍 ANALYSER LE PRODUIT", key="btn_analyser"):
     st.session_state.code_detecte = final_code
     st.rerun()
