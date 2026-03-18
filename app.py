@@ -53,40 +53,39 @@ st.title("🍎 Assistant NutriGuide - V6")
 
 st.subheader("📷 Scanner un produit")
 
-# Bloc HTML/JS indépendant de Streamlit
+# Bloc HTML/JS avec bouton Copier en dessous (adapté mobile)
 scanner_html = """
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden; margin-bottom:10px;"></div>
 <div style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8;">
-    <label style="font-family: sans-serif; font-weight: bold; color: #1a2336;">Code détecté :</label>
-    <div style="display: flex; gap: 10px; margin-top: 5px;">
-        <input type="text" id="result_field" style="flex-grow: 1; padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 1.2rem; font-weight: bold;" readonly>
-        <button onclick="copyToClipboard()" style="padding: 10px 15px; background-color: #1a73e8; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">
-            Copier
-        </button>
-    </div>
+    <label style="font-family: sans-serif; font-weight: bold; color: #1a2336; display: block; margin-bottom: 5px;">Code détecté :</label>
+    <input type="text" id="result_field" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.3rem; font-weight: bold; box-sizing: border-box;" readonly>
+    <button onclick="copyToClipboard()" style="width: 100%; margin-top: 10px; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
+        📋 COPIER LE CODE
+    </button>
 </div>
 
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText) {
         document.getElementById('result_field').value = decodedText;
-        // On stoppe le scanner proprement après détection
         html5QrcodeScanner.clear();
     }
     
     function copyToClipboard() {
         var copyText = document.getElementById("result_field");
+        if (!copyText.value) return;
+        
         copyText.select();
         copyText.setSelectionRange(0, 99999);
         navigator.clipboard.writeText(copyText.value);
-        alert("Code copié : " + copyText.value);
+        alert("Code copié ! Collez-le maintenant dans le champ 'Code manuel'.");
     }
 
     let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 """
-components.html(scanner_html, height=520)
+components.html(scanner_html, height=580)
 
 # Champ Streamlit normal
 code_manuel = st.text_input("Code manuel (Collez le code ici) :", value=st.session_state.code_recherche)
