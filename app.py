@@ -56,27 +56,29 @@ st.title("🍎 Assistant NutriGuide - V6")
 # --- 3. SCANNER ---
 st.subheader("📷 Scanner un produit")
 
-# Le scanner HTML
+# Le scanner HTML avec script de clic renforcé
 scanner_html = """
 <div id="reader" style="width:100%;"></div>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText, decodedResult) {
-        // On cible l'input de Streamlit par son tag et on injecte la valeur
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
         if (inputs.length > 0) {
+            // Injection du code
             inputs[0].value = decodedText;
             inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
             inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
             
-            // On clique sur le bouton "ANALYSER" automatiquement
-            const buttons = window.parent.document.querySelectorAll('button');
-            for (let btn of buttons) {
-                if (btn.innerText.includes("ANALYSER")) {
-                    btn.click();
-                    break;
+            // Clic forcé sur le bouton ANALYSER
+            setTimeout(() => {
+                const buttons = window.parent.document.querySelectorAll('button');
+                for (let btn of buttons) {
+                    if (btn.innerText.includes("ANALYSER")) {
+                        btn.click();
+                        break;
+                    }
                 }
-            }
+            }, 300); // Petit délai pour laisser l'input s'enregistrer
         }
     }
     let html5QrcodeScanner = new Html5QrcodeScanner(
@@ -88,10 +90,11 @@ scanner_html = """
 
 components.html(scanner_html, height=380)
 
-# Champ texte HORS formulaire pour permettre la mise à jour JS
+# Champ texte
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
 
-if st.button("🔍 ANALYSER LE PRODUIT"):
+# Utilisation d'un bouton avec une clé stable
+if st.button("🔍 ANALYSER LE PRODUIT", key="btn_analyser"):
     st.session_state.code_detecte = final_code
     st.rerun()
 
