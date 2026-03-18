@@ -37,15 +37,16 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
+# Initialisation des variables de session
 if "code_recherche" not in st.session_state:
     st.session_state.code_recherche = ""
+if "scan_display_val" not in st.session_state:
+    st.session_state.scan_display_val = ""
 
 st.markdown("""
     <style>
     .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
     div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; font-weight: bold; color: #1a2336; font-size: 1.2rem; }
-    /* Style pour le bloc de code détecté */
-    .stCodeBlock { border: 2px solid #28a745 !important; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -55,47 +56,36 @@ st.title("🍎 Assistant NutriGuide - V6")
 
 # 1. SCANNER
 st.subheader("📷 Scanner un produit")
-
-# Le pont JavaScript utilise une URL pour renvoyer le code sans perdre le focus
-query_params = st.query_params
-scan_result = query_params.get("scan", "")
-
 scanner_html = """
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden;"></div>
 <script src="https://unpkg.com/html5-qrcode"></script>
 <script>
     function onScanSuccess(decodedText) {
-        html5QrcodeScanner.clear().then(() => {
-            const url = new URL(window.location.href);
-            url.searchParams.set('scan', decodedText);
-            window.parent.location.href = url.href;
-        });
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        if (inputs.length > 1) {
+            // On injecte dans le deuxième champ
+            inputs[1].value = decodedText;
+            inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+            inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        html5QrcodeScanner.clear();
     }
     let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 """
-if not scan_result:
-    components.html(scanner_html, height=350)
+components.html(scanner_html, height=350)
 
-# 2. AFFICHAGE ET SAISIE
-col1, col2 = st.columns(2)
+# 2. LES CHAMPS
+# Premier champ : Pour la saisie manuelle et l'analyse
+code_manuel = st.text_input("Code manuel :", value=st.session_state.code_recherche)
 
-with col1:
-    # Champ de saisie manuelle pour l'analyse
-    code_manuel = st.text_input("📝 Code manuel (à analyser) :", value=st.session_state.code_recherche)
-    if st.button("🔍 ANALYSER LE PRODUIT"):
-        st.session_state.code_recherche = code_manuel.strip()
-        st.rerun()
+# Deuxième champ : Affichage du scan avec mémoire de session pour éviter la disparition
+st.text_input("Code détecté par le scan :", value=st.session_state.scan_display_val, key="scan_display_val")
 
-with col2:
-    # Affichage du code détecté avec option de copie facile
-    st.write("✅ Code détecté par le scan :")
-    if scan_result:
-        st.code(scan_result, language=None)
-        st.info("💡 Cliquez sur l'icône à droite du code pour le copier, puis collez-le à gauche.")
-    else:
-        st.write("*(En attente du scan...)*")
+if st.button("🔍 ANALYSER LE PRODUIT"):
+    st.session_state.code_recherche = code_manuel.strip()
+    st.rerun()
 
 st.divider()
 
@@ -155,7 +145,5 @@ if st.session_state.code_recherche and client:
 
 if st.button("🔄 NOUVEAU SCAN / RESET"):
     st.session_state.code_recherche = ""
-    st.query_params.clear()
+    st.session_state.scan_display_val = ""
     st.rerun()
-
-    #test 2
