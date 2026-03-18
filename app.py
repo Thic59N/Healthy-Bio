@@ -37,55 +37,52 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
-# RÉCUPÉRATION DU CODE DEPUIS L'URL (Action auto)
-query_params = st.query_params
-if "code" in query_params:
-    st.session_state.code_detecte = query_params["code"]
-    # On nettoie l'URL pour éviter de boucler
-    st.query_params.clear() 
-
+# Initialisation des variables de session
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
+
+# Récupération automatique si scan via URL
+if "code" in st.query_params:
+    st.session_state.code_detecte = st.query_params["code"]
+    st.query_params.clear()
 
 st.markdown("""
     <style>
     .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
-    #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; margin-bottom: 10px; }
     div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; font-weight: bold; color: #1a2336; font-size: 1.2rem; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🍎 Assistant NutriGuide - V6")
 
-# --- 3. SCANNER ---
-# On n'affiche le scanner que si on n'a pas encore de code
+# --- 3. INTERFACE DE SAISIE ---
+
+# Si aucun code n'est actif, on propose le scanner
 if not st.session_state.code_detecte:
     st.subheader("📷 Scanner un produit")
     scanner_html = """
-    <div id="reader" style="width:100%;"></div>
+    <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden;"></div>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
-        function onScanSuccess(decodedText, decodedResult) {
+        function onScanSuccess(decodedText) {
             html5QrcodeScanner.clear().then(() => {
-                // On recharge la page avec le code dans l'URL
                 const url = new URL(window.location.href);
                 url.searchParams.set('code', decodedText);
                 window.parent.location.href = url.href;
             });
         }
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
-        );
+        let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
         html5QrcodeScanner.render(onScanSuccess);
     </script>
     """
-    components.html(scanner_html, height=380)
+    components.html(scanner_html, height=350)
 
-# Champ texte (manuel ou rempli via URL)
-final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
+# CHAMP DE SAISIE MANUELLE
+# On utilise le session_state pour que la valeur persiste
+input_val = st.text_input("Tapez ou modifiez le code barre :", value=st.session_state.code_detecte)
 
-if st.button("🔍 ANALYSER LE PRODUIT", key="btn_analyser"):
-    st.session_state.code_detecte = final_code
+if st.button("🔍 ANALYSER LE PRODUIT"):
+    st.session_state.code_detecte = input_val.strip()
     st.rerun()
 
 st.divider()
@@ -140,12 +137,10 @@ if st.session_state.code_detecte and client:
                     st.error("📉 FLOP 3")
                     st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Produit {code_a_chercher} inconnu.")
+            st.warning(f"Produit '{code_a_chercher}' inconnu dans la base.")
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Erreur BigQuery : {e}")
 
-if st.button("🔄 NOUVEAU SCAN"):
+if st.button("🔄 NOUVEAU SCAN / RESET"):
     st.session_state.code_detecte = ""
-    # On vide aussi l'URL
-    st.query_params.clear()
     st.rerun()
