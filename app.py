@@ -53,14 +53,13 @@ st.title("🍎 Assistant NutriGuide - V6")
 
 st.subheader("📷 Scanner un produit")
 
-# Bloc HTML/JS avec bouton Copier en dessous (adapté mobile)
 scanner_html = """
 <div id="reader" style="width:100%; border: 2px solid #1a2336; border-radius: 15px; overflow: hidden; margin-bottom:10px;"></div>
 <div style="background-color: #e8f0fe; padding: 15px; border-radius: 10px; border: 1px solid #1a73e8;">
     <label style="font-family: sans-serif; font-weight: bold; color: #1a2336; display: block; margin-bottom: 5px;">Code détecté :</label>
     <input type="text" id="result_field" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #ccc; font-size: 1.3rem; font-weight: bold; box-sizing: border-box;" readonly>
-    <button onclick="copyToClipboard()" style="width: 100%; margin-top: 10px; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
-        📋 COPIER LE CODE
+    <button onclick="copyAndTransfer()" style="width: 100%; margin-top: 10px; padding: 15px; background-color: #1a73e8; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem;">
+        ⚡ COPIER & COLLER AUTOMATIQUEMENT
     </button>
 </div>
 
@@ -71,14 +70,26 @@ scanner_html = """
         html5QrcodeScanner.clear();
     }
     
-    function copyToClipboard() {
-        var copyText = document.getElementById("result_field");
-        if (!copyText.value) return;
+    function copyAndTransfer() {
+        var code = document.getElementById("result_field").value;
+        if (!code) return;
         
-        copyText.select();
-        copyText.setSelectionRange(0, 99999);
-        navigator.clipboard.writeText(copyText.value);
-        alert("Code copié ! Collez-le maintenant dans le champ 'Code manuel'.");
+        // 1. Copie presse-papier (navigateur)
+        navigator.clipboard.writeText(code);
+        
+        // 2. Recherche du champ Streamlit dans la page parente
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        if (inputs.length > 0) {
+            const targetInput = inputs[0]; // Le premier champ est "Code manuel"
+            targetInput.value = code;
+            
+            // 3. On force Streamlit à détecter le changement
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // Petit message visuel
+            console.log("Code transféré : " + code);
+        }
     }
 
     let html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 20, qrbox: 250 }, false);
@@ -87,8 +98,8 @@ scanner_html = """
 """
 components.html(scanner_html, height=580)
 
-# Champ Streamlit normal
-code_manuel = st.text_input("Code manuel (Collez le code ici) :", value=st.session_state.code_recherche)
+# Champ Streamlit qui recevra le code
+code_manuel = st.text_input("Code manuel (reçoit le code automatiquement) :", value=st.session_state.code_recherche)
 
 if st.button("🔍 ANALYSER LE PRODUIT"):
     st.session_state.code_recherche = code_manuel.strip()
@@ -146,7 +157,7 @@ if st.session_state.code_recherche and client:
                     st.error("📉 FLOP 3")
                     st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Produit '{code_a_chercher}' inconnu dans la base.")
+            st.warning(f"Produit '{code_a_chercher}' inconnu.")
     except Exception as e:
         st.error(f"Erreur BigQuery : {e}")
 
