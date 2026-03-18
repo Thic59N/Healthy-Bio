@@ -1,9 +1,6 @@
 import streamlit as st
 import json
 import os
-import requests
-from PIL import Image
-import io
 import subprocess
 import sys
 import streamlit.components.v1 as components
@@ -40,6 +37,13 @@ client = get_bigquery_client()
 # --- 2. STYLE & CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
+# RÉCUPÉRATION DU CODE DEPUIS L'URL (Action auto)
+query_params = st.query_params
+if "code" in query_params:
+    st.session_state.code_detecte = query_params["code"]
+    # On nettoie l'URL pour éviter de boucler
+    st.query_params.clear() 
+
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
@@ -54,40 +58,34 @@ st.markdown("""
 st.title("🍎 Assistant NutriGuide - V6")
 
 # --- 3. SCANNER ---
-st.subheader("📷 Scanner un produit")
+# On n'affiche le scanner que si on n'a pas encore de code
+if not st.session_state.code_detecte:
+    st.subheader("📷 Scanner un produit")
+    scanner_html = """
+    <div id="reader" style="width:100%;"></div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        function onScanSuccess(decodedText, decodedResult) {
+            html5QrcodeScanner.clear().then(() => {
+                // On recharge la page avec le code dans l'URL
+                const url = new URL(window.location.href);
+                url.searchParams.set('code', decodedText);
+                window.parent.location.href = url.href;
+            });
+        }
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
+        );
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+    """
+    components.html(scanner_html, height=380)
 
-scanner_html = """
-<div id="reader" style="width:100%;"></div>
-<script src="https://unpkg.com/html5-qrcode"></script>
-<script>
-    function onScanSuccess(decodedText, decodedResult) {
-        // 1. Arrêter le scanner d'abord (promesse)
-        html5QrcodeScanner.clear().then(() => {
-            // 2. Une fois coupé, on cherche l'input
-            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {
-                inputs[0].value = decodedText;
-                inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-                inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }).catch(err => {
-            console.error("Erreur lors de l'arrêt : ", err);
-        });
-    }
-    let html5QrcodeScanner = new Html5QrcodeScanner(
-        "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
-    );
-    html5QrcodeScanner.render(onScanSuccess);
-</script>
-"""
-components.html(scanner_html, height=380)
-
-# Champ texte
+# Champ texte (manuel ou rempli via URL)
 final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
 
 if st.button("🔍 ANALYSER LE PRODUIT", key="btn_analyser"):
-    # Fix : On sauvegarde la valeur du widget dans le state avant le rerun
-    st.session_state.code_detecte = st.session_state["input_code"]
+    st.session_state.code_detecte = final_code
     st.rerun()
 
 st.divider()
@@ -148,4 +146,6 @@ if st.session_state.code_detecte and client:
 
 if st.button("🔄 NOUVEAU SCAN"):
     st.session_state.code_detecte = ""
+    # On vide aussi l'URL
+    st.query_params.clear()
     st.rerun()
