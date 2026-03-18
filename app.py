@@ -46,72 +46,68 @@ if "code_detecte" not in st.session_state:
 st.markdown("""
     <style>
     .stButton > button { width: 100%; height: 3.5rem; border-radius: 12px; font-weight: bold; }
-    #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; }
-    /* Style du bouton d'analyse quand il apparaît */
-    div[data-testid="stFormSubmitButton"] > button { background-color: #28a745 !important; color: white !important; }
+    #reader { border: 2px solid #1a2336 !important; border-radius: 15px !important; overflow: hidden; margin-bottom: 10px; }
+    div[data-testid="stTextInput"] input { background-color: #f0f2f6 !important; font-weight: bold; color: #1a2336; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🍎 Assistant NutriGuide - V6")
 
-# --- 3. SCANNER AVEC DÉCLENCHEUR FORCÉ ---
+# --- 3. SCANNER ---
 st.subheader("📷 Scanner un produit")
 
-# On utilise un formulaire Streamlit pour capturer la validation
-with st.form("scan_form"):
-    scanner_html = """
-    <div id="reader" style="width:100%;"></div>
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-        function onScanSuccess(decodedText, decodedResult) {
-            // 1. On remplit le champ de la page parente
-            const inputs = window.parent.document.querySelectorAll('input');
-            for (let input of inputs) {
-                if (input.ariaLabel && input.ariaLabel.includes("Code détecté")) {
-                    input.value = decodedText;
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                    
-                    // 2. On cherche le bouton "ANALYSER" du formulaire et on clique dessus
-                    const buttons = window.parent.document.querySelectorAll('button');
-                    for (let btn of buttons) {
-                        if (btn.innerText.includes("ANALYSER")) {
-                            btn.click();
-                            break;
-                        }
-                    }
-                    html5QrcodeScanner.clear();
+# Le scanner HTML
+scanner_html = """
+<div id="reader" style="width:100%;"></div>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+    function onScanSuccess(decodedText, decodedResult) {
+        // On cible l'input de Streamlit par son tag et on injecte la valeur
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        if (inputs.length > 0) {
+            inputs[0].value = decodedText;
+            inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+            inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+            
+            // On clique sur le bouton "ANALYSER" automatiquement
+            const buttons = window.parent.document.querySelectorAll('button');
+            for (let btn of buttons) {
+                if (btn.innerText.includes("ANALYSER")) {
+                    btn.click();
                     break;
                 }
             }
         }
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
-        );
-        html5QrcodeScanner.render(onScanSuccess);
-    </script>
-    """
-    
-    components.html(scanner_html, height=380)
-    
-    final_code = st.text_input("Code détecté (modifiable manuellement) :", value=st.session_state.code_detecte).strip()
-    submit = st.form_submit_button("🔍 ANALYSER LE PRODUIT")
-    
-    if submit:
-        st.session_state.code_detecte = final_code
+    }
+    let html5QrcodeScanner = new Html5QrcodeScanner(
+        "reader", { fps: 20, qrbox: {width: 250, height: 150} }, false
+    );
+    html5QrcodeScanner.render(onScanSuccess);
+</script>
+"""
+
+components.html(scanner_html, height=380)
+
+# Champ texte HORS formulaire pour permettre la mise à jour JS
+final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte, key="input_code")
+
+if st.button("🔍 ANALYSER LE PRODUIT"):
+    st.session_state.code_detecte = final_code
+    st.rerun()
 
 st.divider()
 
-# --- 4. RECHERCHE BIGQUERY (TA LOGIQUE ORIGINALE) ---
+# --- 4. RECHERCHE BIGQUERY ---
 if st.session_state.code_detecte and client:
     try:
-        final_code = st.session_state.code_detecte
+        code_a_chercher = st.session_state.code_detecte
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
+        
         query_p = f"""
             SELECT Product_name, Famille, Secret_Score, Url_image_small, Url 
             FROM `{TABLE_ID}` 
-            WHERE CAST(Code_barre AS STRING) = '{final_code}'
-                OR SAFE_CAST(Code_barre AS INT64) = SAFE_CAST('{final_code}' AS INT64)
+            WHERE CAST(Code_barre AS STRING) = '{code_a_chercher}'
+               OR SAFE_CAST(Code_barre AS INT64) = SAFE_CAST('{code_a_chercher}' AS INT64)
             LIMIT 1
         """
         df_p = client.query(query_p).to_dataframe()
@@ -151,7 +147,7 @@ if st.session_state.code_detecte and client:
                     st.error("📉 FLOP 3")
                     st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
         else:
-            st.warning(f"Produit {final_code} inconnu.")
+            st.warning(f"Produit {code_a_chercher} inconnu.")
     except Exception as e:
         st.error(f"Erreur : {e}")
 
