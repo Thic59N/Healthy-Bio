@@ -6,155 +6,117 @@ import sys
 import streamlit.components.v1 as components
 from google.oauth2 import service_account
 
-# --- 0. INSTALL BIGQUERY SI BESOIN ---
+# --- BIGQUERY ---
 try:
     from google.cloud import bigquery
-except (ImportError, ModuleNotFoundError):
+except:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "google-cloud-bigquery", "db-dtypes", "google-auth"])
     from google.cloud import bigquery
 
-# --- 1. CONNEXION BIGQUERY ---
+# --- CONNEXION ---
 NOM_FICHIER_JSON = "bases-sql-485411-c96fe54fc8c7.json"
 current_dir = os.path.dirname(os.path.abspath(__file__))
 path_to_key = os.path.join(current_dir, NOM_FICHIER_JSON)
 
 def get_bigquery_client():
-    scopes = [
-        "https://www.googleapis.com/auth/bigquery",
-        "https://www.googleapis.com/auth/drive.readonly"
-    ]
+    scopes = ["https://www.googleapis.com/auth/bigquery"]
     try:
         if os.path.exists(path_to_key):
             creds = service_account.Credentials.from_service_account_info(
                 json.load(open(path_to_key)), scopes=scopes
             )
             return bigquery.Client(credentials=creds, project=creds.project_id)
-
-        if "gcp_service_account" in st.secrets:
-            info = json.loads(st.secrets["gcp_service_account"])
-            creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
-            return bigquery.Client(credentials=creds, project=creds.project_id)
-
     except Exception as e:
         st.error(f"Erreur connexion : {e}")
-
     return None
 
 client = get_bigquery_client()
 
-# --- 2. CONFIG ---
+# --- CONFIG ---
 st.set_page_config(page_title="NutriGuide", layout="wide")
 
 if "code_detecte" not in st.session_state:
     st.session_state.code_detecte = ""
 
-st.title("🍎 Assistant NutriGuide - V8")
+st.title("🍎 NutriGuide")
 
-# --- 3. SCANNER ---
-if st.session_state.code_detecte == "":
-    st.subheader("📷 Scanner un produit")
+# --- SCANNER ---
+st.subheader("📷 Scanner un produit")
 
-    scanner_html = """
-    <div id="reader" style="width:100%;"></div>
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-        function onScanSuccess(decodedText, decodedResult) {
-            html5QrcodeScanner.clear();
+scanner_html = """
+<div id="reader" style="width:100%;"></div>
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script>
+function onScanSuccess(decodedText) {
+    html5QrcodeScanner.clear();
 
-            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {
-                inputs[0].value = decodedText;
-                inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        }
+    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+    if (inputs.length > 0) {
+        inputs[0].value = decodedText;
+        inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+    }
+}
+let html5QrcodeScanner = new Html5QrcodeScanner(
+    "reader",
+    { fps: 20, qrbox: {width: 250, height: 150} },
+    false
+);
+html5QrcodeScanner.render(onScanSuccess);
+</script>
+"""
+components.html(scanner_html, height=350)
 
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader",
-            { fps: 20, qrbox: {width: 250, height: 150} },
-            false
-        );
+# --- INPUT (IMPORTANT) ---
+final_code = st.text_input("Code détecté :", key="barcode_input")
 
-        html5QrcodeScanner.render(onScanSuccess);
-    </script>
-    """
-    components.html(scanner_html, height=380)
+# --- BOUTONS (TOUJOURS VISIBLES) ---
+col1, col2 = st.columns(2)
 
-# --- INPUT ---
-final_code = st.text_input("Code détecté :", value=st.session_state.code_detecte)
+with col1:
+    if st.button("🔍 ANALYSER LE PRODUIT"):
+        st.session_state.code_detecte = final_code
 
-# --- AUTO ANALYSE PROPRE ---
-if final_code and final_code != st.session_state.code_detecte:
-    st.session_state.code_detecte = final_code
-    st.rerun()
-
-# --- RESET ---
-if st.session_state.code_detecte:
+with col2:
     if st.button("🔄 NOUVEAU SCAN"):
         st.session_state.code_detecte = ""
+        st.session_state.barcode_input = ""
         st.rerun()
 
 st.divider()
 
-# --- 4. RECHERCHE BIGQUERY ---
+# --- ANALYSE ---
 if st.session_state.code_detecte and client:
     try:
-        code_a_chercher = st.session_state.code_detecte
+        code = st.session_state.code_detecte
         TABLE_ID = "bases-sql-485411.Healthy_Bio_v2.Secret_Sauce_Streamlit_v6"
 
-        query_p = f"""
-            SELECT Product_name, Famille, Secret_Score, Url_image_small, Url
-            FROM `{TABLE_ID}`
-            WHERE CAST(Code_barre AS STRING) = '{code_a_chercher}'
-               OR SAFE_CAST(Code_barre AS INT64) = SAFE_CAST('{code_a_chercher}' AS INT64)
-            LIMIT 1
+        query = f"""
+        SELECT Product_name, Famille, Secret_Score, Url_image_small, Url
+        FROM `{TABLE_ID}`
+        WHERE CAST(Code_barre AS STRING) = '{code}'
+        LIMIT 1
         """
 
-        df_p = client.query(query_p).to_dataframe()
+        df = client.query(query).to_dataframe()
 
-        if not df_p.empty:
-            p = df_p.iloc[0]
-            famille_clean = p['Famille'].replace("'", "''")
+        if not df.empty:
+            p = df.iloc[0]
 
-            c_img, c_txt = st.columns([1, 4])
+            st.success("Produit trouvé ✅")
 
-            with c_img:
-                if p['Url_image_small']:
-                    st.image(p['Url_image_small'], width=150)
+            col1, col2 = st.columns([1, 3])
 
-            with c_txt:
-                st.markdown(f"## [{p['Product_name']}]({p['Url']})")
-                st.info(f"Famille : {p['Famille']} | Score : {p['Secret_Score']}")
+            with col1:
+                if p["Url_image_small"]:
+                    st.image(p["Url_image_small"])
 
-            st.write(f"### 📊 Comparaison dans la catégorie : {p['Famille']}")
-
-            query_alt = f"""
-                SELECT Url_image_small, Product_name, Secret_Score, Url
-                FROM `{TABLE_ID}`
-                WHERE Famille = '{famille_clean}'
-                ORDER BY Secret_Score DESC
-            """
-
-            df_alt = client.query(query_alt).to_dataframe()
-
-            if not df_alt.empty:
-                col_top, col_flop = st.columns(2)
-
-                config = {
-                    "Url_image_small": st.column_config.ImageColumn("Photo"),
-                    "Secret_Score": "Score",
-                    "Url": st.column_config.LinkColumn("Lien", display_text="🌐")
-                }
-
-                with col_top:
-                    st.success("🏆 TOP 3")
-                    st.dataframe(df_alt.head(3), column_config=config, hide_index=True, use_container_width=True)
-
-                with col_flop:
-                    st.error("📉 FLOP 3")
-                    st.dataframe(df_alt.tail(3).sort_values("Secret_Score"), column_config=config, hide_index=True, use_container_width=True)
+            with col2:
+                st.markdown(f"### [{p['Product_name']}]({p['Url']})")
+                st.write(f"Famille : {p['Famille']}")
+                st.write(f"Score : {p['Secret_Score']}")
 
         else:
-            st.warning(f"Produit {code_a_chercher} inconnu.")
+            st.warning("Produit inconnu")
 
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(e)
